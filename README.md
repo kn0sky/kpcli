@@ -28,7 +28,7 @@ For `run` and `debug` modes, run `kphelper` inside a challenge directory contain
 run.sh
 ```
 
-For `debug`, the directory should also contain the symbol file you pass to the command. If omitted, it defaults to:
+For `debug`, the directory should also contain the symbol file you pass to the command. If omitted, `kphelper` recursively searches the current tree for:
 
 ```text
 vmlinux
@@ -85,6 +85,7 @@ kphelper remote 127.0.0.1 1337
 ### `kphelper checksec [cpio]`
 
 Inspect common kernel challenge security settings from `run.sh`. Optionally unpack an initramfs cpio into `./root` and scan its `init`.
+If the cpio path is omitted, `kphelper` first tries the `-initrd` path in `run.sh`, then recursively searches the current tree for common rootfs/initramfs files.
 
 ```bash
 kphelper checksec

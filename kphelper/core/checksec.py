@@ -3,6 +3,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from .discovery import find_cpio
+
 
 UNKNOWN = "Unknown"
 ENABLED = "Enabled"
@@ -38,6 +40,19 @@ def extract_initrd(run_text):
     if not match:
         return None
     return match.group(1).strip("'\"")
+
+
+def resolve_initrd_path(initrd, run_path):
+    if not initrd or initrd == UNKNOWN:
+        return None
+    path = Path(initrd)
+    if path.exists():
+        return path
+    run_dir = Path(run_path).parent
+    candidate = run_dir / path
+    if candidate.exists():
+        return candidate
+    return None
 
 
 def has_any(text, needles):
@@ -259,7 +274,12 @@ def render_report(run_result, init_result=None, color=True):
 def run_checksec(run_path="run.sh", cpio_path=None, root_dir="root", color=True):
     run_result = detect_runsec(run_path)
     init_result = None
+    if cpio_path is None:
+        cpio_path = resolve_initrd_path(run_result["Initrd"], run_path)
+    if cpio_path is None:
+        cpio_path = find_cpio()
     if cpio_path:
+        run_result["Initrd"] = str(cpio_path)
         if not shutil.which("cpio"):
             raise RuntimeError("cpio not found")
         unpacked = unpack_cpio(cpio_path, root_dir)

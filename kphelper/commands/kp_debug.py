@@ -9,16 +9,20 @@ def register(subparsers):
     parser.add_argument(
         "symbol",
         nargs="?",
-        default="vmlinux",
-        help="debug symbol file passed to gdb, default: vmlinux",
+        help="debug symbol file passed to gdb, default: auto-detect vmlinux",
     )
     parser.set_defaults(handler=handle)
     return parser
 
 
 def handle(args):
+    symbol = args.symbol
+    if symbol is None:
+        found = core.find_vmlinux()
+        symbol = str(found) if found else "vmlinux"
+
     io = core.local_target()
     core.prepare_target(io)
-    core.kgdb(args.symbol)
+    core.kgdb(symbol)
     core.interact(io)
     return 0

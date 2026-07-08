@@ -1,6 +1,7 @@
 from .build import build_exp
 from .debug import kgdb
 from .constants import PROMPTS, REMOTE_DIR
+from .discovery import find_cpio, find_vmlinux
 from .session import cd_remote_tmp, interact, local_target, remote_target
 from .upload import LOCAL_EXP, REMOTE_EXP, upload
 from .workflow import prepare_target
@@ -10,6 +11,8 @@ __all__ = [
     "REMOTE_DIR",
     "LOCAL_EXP",
     "REMOTE_EXP",
+    "find_cpio",
+    "find_vmlinux",
     "build_exp",
     "upload",
     "kgdb",

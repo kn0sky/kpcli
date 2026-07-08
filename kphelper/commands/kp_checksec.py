@@ -15,7 +15,7 @@ def register(subparsers):
     parser.add_argument(
         "cpio",
         nargs="?",
-        help="optional initramfs cpio archive to unpack into ./root and scan",
+        help="optional initramfs cpio archive, default: auto-detect from run.sh or current tree",
     )
     parser.add_argument(
         "--root",
