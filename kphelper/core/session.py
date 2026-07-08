@@ -2,8 +2,8 @@ from .constants import PROMPTS, REMOTE_DIR
 from .pwn import process, remote
 
 
-def local_target():
-    return process("./run.sh")
+def local_target(run_path="./run.sh"):
+    return process(str(run_path))
 
 
 def remote_target(ip, port):

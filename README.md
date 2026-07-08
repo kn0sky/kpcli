@@ -73,6 +73,26 @@ After upload, `kphelper` checks the remote file size with `wc -c < /tmp/exp`. If
 
 ## Commands
 
+### `kphelper init`
+
+Create an `exp.c` kernel pwn skeleton in the current directory.
+
+```bash
+kphelper init
+kphelper init -o exploit.c
+kphelper init --force
+```
+
+The template includes:
+
+```text
+open /dev/xxx helper
+save_state()
+userland return shell stub
+commit_creds / prepare_kernel_cred ROP notes
+msg_msg / userfaultfd / modprobe_path primitive notes
+```
+
 ### `kphelper run`
 
 Compile `exp.c` if present, start local `./run.sh`, upload `exp` if available, switch to `/tmp`, then enter interactive mode.
@@ -83,7 +103,7 @@ kphelper run
 
 ### `kphelper debug [symbol]`
 
-Pre-check `run.sh`, compile `exp.c` if present, start local `./run.sh`, prepare the target, then open KGDB in a tmux split.
+Generate a temporary debug copy of `run.sh`, inject `nokaslr -s -S`, compile `exp.c` if present, start that temporary script, prepare the target, then open KGDB in a tmux split.
 
 ```bash
 kphelper debug
@@ -93,7 +113,7 @@ kphelper debug ./module.ko
 
 The default symbol file is `vmlinux`.
 
-`debug` requires `run.sh` to expose a QEMU gdbstub through `-s`, `-S`, or `-gdb`. If KASLR is detected, `kphelper` warns but continues.
+The original `run.sh` is not modified. The temporary debug script is `.kphelper-run-debug.sh`.
 
 For `vmlinux`, `kphelper` only connects with:
 

@@ -12,7 +12,8 @@ HELP_EPILOG = """\
 current directory requirements:
   run/debug mode:
     required: ./run.sh
-    debug also requires: symbol file and qemu gdbstub on localhost:1234
+    debug auto-generates .kphelper-run-debug.sh with nokaslr -s -S
+    debug also requires: symbol file
     default debug symbol file: ./vmlinux
 
   remote mode:
@@ -34,6 +35,7 @@ command extension:
   each module exports: register(subparsers)
 
 examples:
+  kphelper init
   kphelper checksec
   kphelper checksec rootfs.cpio
   kphelper pack

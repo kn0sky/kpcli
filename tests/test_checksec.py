@@ -4,7 +4,7 @@ from pathlib import Path
 
 from kphelper.core.checksec import detect_runsec, extract_cmdline, extract_initrd
 from kphelper.core.discovery import find_cpio, find_vmlinux
-from kphelper.core.runfile import update_run_initrd
+from kphelper.core.runfile import create_debug_run_copy, update_run_initrd
 
 
 class ChecksecParsingTests(unittest.TestCase):
@@ -93,6 +93,22 @@ class PackTests(unittest.TestCase):
 
             self.assertIn("-initrd packed-rootfs.cpio.gz", run_path.read_text())
             self.assertTrue((Path(tmp) / "run.sh.bak").exists())
+
+    def test_create_debug_run_copy_injects_nokaslr_gdbstub_and_keeps_original(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            run_path = base / "run.sh"
+            debug_path = base / ".kphelper-run-debug.sh"
+            original = 'qemu-system-x86_64 -append "console=ttyS0" -initrd rootfs.cpio\n'
+            run_path.write_text(original)
+
+            create_debug_run_copy(run_path, debug_path)
+
+            self.assertEqual(run_path.read_text(), original)
+            debug_text = debug_path.read_text()
+            self.assertIn("-s", debug_text)
+            self.assertIn("-S", debug_text)
+            self.assertIn('console=ttyS0 nokaslr', debug_text)
 
 
 if __name__ == "__main__":
