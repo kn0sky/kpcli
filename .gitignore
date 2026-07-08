@@ -1,0 +1,44 @@
+# Python bytecode/cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Build/distribution artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+wheelhouse/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Test/type/lint caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local editor/OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Kernel pwn challenge artifacts generated in working directories
+root/
+exp
+*.o
+*.ko.cmd
+*.mod
+*.mod.c
+Module.symvers
+modules.order
+
+# Local Codex/agent metadata
+.codex/
+.agents/
