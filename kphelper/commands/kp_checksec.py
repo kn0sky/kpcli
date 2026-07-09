@@ -1,5 +1,5 @@
 from kphelper.core.checksec import run_checksec
-from kphelper.core.probe import probe_guest_runtime
+from kphelper.core.probe import probe_guest_runtime, render_probe_report
 from kphelper.core.probe_report import render_live_report
 
 
@@ -32,13 +32,22 @@ def register(subparsers):
     parser.add_argument(
         "--live",
         action="store_true",
-        help="reserve live runtime probing mode for future dynamic checks",
+        help="run live runtime probe only",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="run static checksec and live probe together",
     )
     parser.set_defaults(handler=handle)
     return parser
 
 
 def handle(args):
+    if args.all:
+        probe_result = probe_guest_runtime(args.run, timeout=8)
+        print(render_probe_report(probe_result, root_dir=args.root, color=not args.no_color))
+        return 0
     if args.live:
         live_result = probe_guest_runtime(args.run, timeout=8)
         print(render_live_report(live_result, color=not args.no_color))

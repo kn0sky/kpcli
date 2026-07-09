@@ -1,6 +1,9 @@
+from .checksec import detect_runsec, scan_init
+from .checksec_report import render_report
 from .errors import KphelperError
-from .session import managed_session, local_target, remote_target
 from .ksym import GuestShell, parse_kptr_value, parse_kallsyms
+from .probe_report import render_live_report
+from .session import managed_session, local_target, remote_target
 from .symbols import DEFAULT_SYMBOLS
 
 
@@ -8,9 +11,22 @@ class LiveProbeError(KphelperError):
     pass
 
 
+class ProbeSessionError(LiveProbeError):
+    pass
+
+
 def _ensure_shell(shell):
     if not shell.ready:
-        raise LiveProbeError("live probe did not reach an interactive shell prompt")
+        raise ProbeSessionError("live probe did not reach an interactive shell prompt")
+
+
+def _merge_runtime_state(static_run, live_result):
+    merged = dict(static_run)
+    for key, value in live_result.items():
+        if value is None:
+            continue
+        merged[key] = value
+    return merged
 
 
 def probe_kallsyms(io, timeout=8, names=DEFAULT_SYMBOLS):
@@ -24,7 +40,7 @@ def probe_kallsyms(io, timeout=8, names=DEFAULT_SYMBOLS):
         raise LiveProbeError("cannot read /proc/sys/kernel/kptr_restrict")
 
     if kptr != 0:
-        return {"kptr_restrict": kptr, "kallsyms": "Hidden", "module_base_leak": "Hidden"}
+        return {"kptr_restrict": kptr, "kallsyms": "Hidden", "module_base_leak": "Hidden", "symbols": {}}
 
     kallsyms_output, _status = shell.run("cat /proc/kallsyms 2>/dev/null || echo unknown")
     symbols = parse_kallsyms(kallsyms_output, names)
@@ -47,10 +63,31 @@ def probe_kallsyms(io, timeout=8, names=DEFAULT_SYMBOLS):
 
 
 def probe_guest_runtime(run_path="./run.sh", timeout=8, names=DEFAULT_SYMBOLS):
+    static_run = detect_runsec(run_path)
     with managed_session(local_target, run_path) as io:
-        return probe_kallsyms(io, timeout=timeout, names=names)
+        live_result = probe_kallsyms(io, timeout=timeout, names=names)
+    return {
+        "static": static_run,
+        "live": live_result,
+        "merged": _merge_runtime_state(static_run, live_result),
+    }
 
 
 def probe_remote_runtime(ip, port, timeout=8, names=DEFAULT_SYMBOLS):
     with managed_session(remote_target, ip, port) as io:
-        return probe_kallsyms(io, timeout=timeout, names=names)
+        live_result = probe_kallsyms(io, timeout=timeout, names=names)
+    return {
+        "static": {},
+        "live": live_result,
+        "merged": _merge_runtime_state({}, live_result),
+    }
+
+
+def render_probe_report(probe_result, root_dir="root", color=True):
+    live_result = probe_result.get("live") or {}
+    merged = probe_result.get("merged") or {}
+    init_result = scan_init(root_dir) if root_dir else None
+    report = render_report(merged, init_result, color=color)
+    if live_result:
+        report += "\n\n" + render_live_report(live_result, color=color)
+    return report

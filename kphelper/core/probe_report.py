@@ -4,7 +4,7 @@ from .formatting import BOLD, BLUE, CYAN, DIM, GREEN, MAGENTA, RED, UNKNOWN, YEL
 def live_status_color(name, value):
     if value in {"Readable"}:
         return GREEN
-    if value in {"Hidden"}:
+    if value in {"Hidden", "Skipped"}:
         return RED
     if value == UNKNOWN:
         return YELLOW
