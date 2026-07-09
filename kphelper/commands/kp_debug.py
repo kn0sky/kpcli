@@ -1,5 +1,9 @@
-from kphelper import core
+from kphelper.core.debug import close_debugger, kgdb
+from kphelper.core.discovery import find_vmlinux
 from kphelper.core.pwn import log
+from kphelper.core.runfile import create_debug_run_copy
+from kphelper.core.session import interact, local_target, managed_session
+from kphelper.core.workflow import build_only, upload_and_cd
 
 
 def register(subparsers):
@@ -19,21 +23,19 @@ def register(subparsers):
 def handle(args):
     symbol = args.symbol
     if symbol is None:
-        found = core.find_vmlinux()
+        found = find_vmlinux()
         symbol = str(found) if found else "vmlinux"
 
-    core.build_only()
-    debug_run = core.create_debug_run_copy()
+    build_only()
+    debug_run = create_debug_run_copy()
     log.success("generated debug run script: %s", debug_run)
 
-    io = None
     debugger = None
     try:
-        io = core.local_target("./" + str(debug_run))
-        core.upload_and_cd(io)
-        debugger = core.kgdb(symbol)
-        core.interact(io)
+        with managed_session(local_target, "./" + str(debug_run)) as io:
+            upload_and_cd(io)
+            debugger = kgdb(symbol)
+            interact(io)
     finally:
-        core.close_debugger(debugger)
-        core.close_session(io)
+        close_debugger(debugger)
     return 0

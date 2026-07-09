@@ -1,4 +1,4 @@
-from kphelper import core
+from kphelper.core.pack import pack_exp
 
 
 def register(subparsers):
@@ -43,7 +43,7 @@ def register(subparsers):
 
 
 def handle(args):
-    core.pack_exp(
+    pack_exp(
         cpio_path=args.cpio,
         run_path=args.run,
         root_dir=args.root,

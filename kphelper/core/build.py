@@ -6,10 +6,6 @@ from .errors import KphelperError
 from .pwn import log
 
 
-class BuildError(KphelperError):
-    pass
-
-
 def run_compiler(cmd, source):
     try:
         subprocess.run(cmd, check=True)
@@ -42,4 +38,4 @@ def build_exp(source=LOCAL_EXP_C, output=LOCAL_EXP):
 
     message = "failed to compile exp.c with musl-gcc or gcc"
     log.failure(message)
-    raise BuildError(message)
+    raise KphelperError(message)

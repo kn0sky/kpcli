@@ -1,5 +1,5 @@
-from kphelper import core
 from kphelper.core.ksym import guest_ksym_report
+from kphelper.core.session import close_session, local_target, remote_target
 from kphelper.core.symbols import DEFAULT_SYMBOLS
 
 
@@ -41,10 +41,10 @@ def handle(args):
     io = None
     try:
         if args.remote:
-            io = core.remote_target(args.remote[0], int(args.remote[1]))
+            io = remote_target(args.remote[0], int(args.remote[1]))
         else:
-            io = core.local_target()
+            io = local_target()
         print(guest_ksym_report(io, names, as_json=args.json, timeout=args.timeout))
     finally:
-        core.close_session(io)
+        close_session(io)
     return 0

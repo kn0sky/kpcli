@@ -8,24 +8,20 @@ from .errors import KphelperError
 from .pwn import log
 
 
-class UploadError(KphelperError):
-    pass
-
-
 def verify_remote_size(io, remote, expected_size, p=PROMPTS):
     io.sendlineafter(p, b"wc -c < %s" % remote.encode())
     try:
         data = io.recvuntil(p, timeout=5)
     except EOFError:
-        raise UploadError("upload verification failed: connection closed")
+        raise KphelperError("upload verification failed: connection closed")
 
     numbers = re.findall(rb"\b([0-9]+)\b", data or b"")
     if not numbers:
-        raise UploadError("upload verification failed: cannot parse wc output")
+        raise KphelperError("upload verification failed: cannot parse wc output")
 
     actual_size = int(numbers[-1])
     if actual_size != expected_size:
-        raise UploadError(
+        raise KphelperError(
             "upload verification failed: remote size %d != local size %d"
             % (actual_size, expected_size)
         )

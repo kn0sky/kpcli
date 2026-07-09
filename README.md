@@ -1,6 +1,6 @@
 # kphelper
 
-`kphelper` is a small CLI helper for local kernel pwn challenge workflows. It can start a local QEMU script, upload a statically compiled exploit, connect KGDB, connect remote shells, and inspect common kernel challenge security settings.
+`kphelper` is a small CLI helper for local kernel pwn challenge workflows. It can start a local QEMU script, upload a statically compiled exploit, connect KGDB, connect remote shells, inspect common kernel challenge security settings, and repack initramfs images.
 
 The intended runtime environment is Linux/WSL.
 
@@ -32,6 +32,29 @@ Run the regression tests with:
 ```bash
 python3 -m unittest
 ```
+
+## How the project is organized
+
+The code is split into four layers:
+
+- `kphelper/commands/`
+  - command entry points and argument parsing
+- `kphelper/core/`
+  - reusable implementation logic
+- `tests/`
+  - automated regression tests
+- `README.md` and docs files
+  - usage and developer guidance
+
+If you are new to the project, start with:
+
+- `kphelper/cli.py`
+- `kphelper/commands/kp_run.py`
+- `kphelper/core/session.py`
+- `kphelper/core/workflow.py`
+- `kphelper/core/checksec.py`
+- `kphelper/core/symbols.py`
+- `kphelper/core/ksym.py`
 
 ## Directory Requirements
 
@@ -83,15 +106,13 @@ kphelper init -o exploit.c
 kphelper init --force
 ```
 
-The template includes:
+The template includes notes for:
 
-```text
-open /dev/xxx helper
-save_state()
-userland return shell stub
-commit_creds / prepare_kernel_cred ROP notes
-msg_msg / userfaultfd / modprobe_path primitive notes
-```
+- `open /dev/xxx`
+- `save_state()`
+- userland return shell stubs
+- `commit_creds` / `prepare_kernel_cred` ROP
+- `msg_msg` / `userfaultfd` / `modprobe_path` primitives
 
 ### `kphelper run`
 
@@ -223,6 +244,8 @@ The output uses color by default:
 - Yellow: unknown
 - Cyan: paths and informational values
 
+Implementation note: the `checksec` output renderer now lives in `kphelper/core/checksec_report.py`, while parsing and detection stay in `kphelper/core/checksec.py`.
+
 Current limitation: `checksec` parses `run.sh` statically with regexes. It works for ordinary direct QEMU invocations, but does not reliably resolve shell variables or argument construction such as:
 
 ```bash
@@ -271,3 +294,15 @@ Shared reusable logic lives under:
 ```text
 kphelper/core/
 ```
+
+## Developer templates
+
+### Command template
+
+A copyable command template is available at:
+
+```text
+kphelper/commands/kp_example.py
+```
+
+It shows how to structure a new command module and explains which parts belong in `commands/` and which parts should be moved into `core/`.

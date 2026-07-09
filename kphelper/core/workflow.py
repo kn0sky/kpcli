@@ -1,5 +1,5 @@
 from .build import build_exp
-from .session import cd_remote_tmp
+from .session import cd_remote_tmp, managed_session
 from .upload import upload
 
 
@@ -14,6 +14,8 @@ def upload_and_cd(io):
     return uploaded
 
 
-def prepare_target(io):
-    build_only()
-    return upload_and_cd(io)
+def build_start_upload_and_interact(build_action, target_action, interactive_action):
+    build_action()
+    with managed_session(target_action) as io:
+        upload_and_cd(io)
+        interactive_action(io)

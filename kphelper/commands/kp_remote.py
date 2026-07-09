@@ -1,4 +1,5 @@
-from kphelper import core
+from kphelper.core.session import interact, managed_session, remote_target
+from kphelper.core.workflow import build_only, upload_and_cd
 
 
 def register(subparsers):
@@ -10,12 +11,8 @@ def register(subparsers):
 
 
 def handle(args):
-    core.build_only()
-    io = None
-    try:
-        io = core.remote_target(args.ip, args.port)
-        core.upload_and_cd(io)
-        core.interact(io)
-    finally:
-        core.close_session(io)
+    build_only()
+    with managed_session(remote_target, args.ip, args.port) as io:
+        upload_and_cd(io)
+        interact(io)
     return 0

@@ -3,6 +3,9 @@ import unittest
 from pathlib import Path
 
 from kphelper.core.checksec import detect_runsec, extract_cmdline, extract_initrd
+from kphelper.core.checksec_report import render_report
+from kphelper.core.checksec_rules import detect_runsec_flags, detect_sysctl_write
+from kphelper.core.checksec_scan import scan_init, startup_script_paths
 from kphelper.core.discovery import find_cpio, find_vmlinux
 from kphelper.core.ksym import parse_kallsyms, parse_kptr_value
 from kphelper.core.runfile import create_debug_run_copy, update_run_initrd
@@ -62,6 +65,55 @@ class ChecksecParsingTests(unittest.TestCase):
         self.assertEqual(result["SMEP"], "Enabled")
         self.assertEqual(result["SMAP"], "Enabled")
         self.assertEqual(result["KGDB"], "Enabled")
+
+    def test_detect_runsec_flags_extracts_values(self):
+        text = 'qemu-system-x86_64 -cpu qemu64,+smep,+smap -append "console=ttyS0 kaslr" -gdb tcp::1234 -initrd rootfs.cpio\n'
+
+        result = detect_runsec_flags(text)
+
+        self.assertEqual(result["KASLR"], "Enabled")
+        self.assertEqual(result["SMEP"], "Enabled")
+        self.assertEqual(result["SMAP"], "Enabled")
+        self.assertEqual(result["KGDB"], "Enabled")
+        self.assertEqual(result["Initrd"], "rootfs.cpio")
+
+    def test_detect_sysctl_write_extracts_value(self):
+        text = 'echo 0 > /proc/sys/kernel/kptr_restrict\n'
+
+        self.assertEqual(detect_sysctl_write(text, "kptr_restrict"), "0")
+
+    def test_render_report_includes_rootfs_section(self):
+        output = render_report(
+            {"run.sh": "run.sh", "KASLR": "Enabled", "SMEP": "Disabled", "SMAP": "Unknown", "KPTI": "Disabled", "KGDB": "Enabled", "Initrd": "rootfs.cpio", "cmdline": "console=ttyS0"},
+            {"Rootfs": "root", "Init": "root/init", "Scripts": "root/init", "Root shell": "Likely root", "Module load": "Found", "kptr_restrict": "0", "dmesg_restrict": "Unknown", "kallsyms": "Referenced", "Module base leak": "Referenced", "Device permissions": "Configured in init"},
+            color=False,
+        )
+
+        self.assertIn("Rootfs checksec", output)
+        self.assertIn("Root shell", output)
+
+
+class ScanTests(unittest.TestCase):
+    def test_startup_script_paths_finds_common_entries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            (base / "init").write_text("#!/bin/sh\n")
+            (base / "etc").mkdir()
+            (base / "etc" / "rcS").write_text("#!/bin/sh\n")
+
+            paths = startup_script_paths(base)
+
+        self.assertEqual([path.name for path in paths], ["init", "rcS"])
+
+    def test_scan_init_detects_root_shell_and_sysctl(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            (base / "init").write_text("#!/bin/sh\necho 0 > /proc/sys/kernel/kptr_restrict\nexec sh\n")
+
+            result = scan_init(base, lambda p: Path(p).read_text())
+
+        self.assertEqual(result["Root shell"], "Likely root")
+        self.assertEqual(result["kptr_restrict"], "0")
 
 
 class DiscoveryTests(unittest.TestCase):

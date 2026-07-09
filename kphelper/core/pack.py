@@ -3,8 +3,9 @@ import subprocess
 from pathlib import Path
 
 from .build import build_exp
-from .checksec import detect_runsec, resolve_initrd_path, sh_quote, unpack_cpio
+from .checksec import detect_runsec, resolve_initrd_path
 from .constants import LOCAL_EXP
+from .cpio import sh_quote, unpack_cpio
 from .discovery import find_cpio
 from .errors import KphelperError
 from .pwn import log

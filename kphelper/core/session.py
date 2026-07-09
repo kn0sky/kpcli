@@ -1,3 +1,5 @@
+from contextlib import contextmanager
+
 from .constants import PROMPTS, REMOTE_DIR
 from .pwn import process, remote
 
@@ -25,3 +27,13 @@ def close_session(io):
         io.close()
     except Exception:
         pass
+
+
+@contextmanager
+def managed_session(factory, *args, **kwargs):
+    io = None
+    try:
+        io = factory(*args, **kwargs)
+        yield io
+    finally:
+        close_session(io)
