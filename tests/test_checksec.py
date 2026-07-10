@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from kphelper.core.analysis import _patch_init_for_root
+from kphelper.core.analysis import _patch_init_for_root, prepare_analysis_root
 from kphelper.core.checksec import (
     detect_runsec,
     detect_sysctl_write,
@@ -163,16 +163,46 @@ class DiscoveryTests(unittest.TestCase):
 
 
 class AnalysisRootfsTests(unittest.TestCase):
-    def test_patch_init_removes_setuidgid_and_adds_sysctl_before_shell(self):
-        original = "#!/bin/sh\ninsmod vuln.ko\nexec setsid cttyhack setuidgid 1000 sh\n"
+    def test_patch_init_only_changes_exact_setuidgid_line(self):
+        original = (
+            "#!/bin/sh\n"
+            "echo 0 > /proc/sys/kernel/kptr_restrict\n"
+            "setsid cttyhack setuidgid 1337 sh\n"
+        )
 
         patched, changes = _patch_init_for_root(original)
 
-        self.assertIn("insmod vuln.ko", patched)
-        self.assertNotIn("setuidgid 1000", patched)
-        self.assertIn("kptr_restrict", patched)
-        self.assertLess(patched.index("kptr_restrict"), patched.index("exec setsid cttyhack sh"))
+        self.assertEqual(
+            patched,
+            "#!/bin/sh\necho 0 > /proc/sys/kernel/kptr_restrict\nsetsid cttyhack setuidgid 0 sh\n",
+        )
         self.assertTrue(changes)
+
+    def test_patch_init_ignores_other_users_and_command_forms(self):
+        original = "setuidgid 1337 sh\nexec setsid cttyhack setuidgid 1000 sh\n"
+
+        patched, changes = _patch_init_for_root(original)
+
+        self.assertEqual(patched, original)
+        self.assertFalse(changes)
+
+    def test_prepare_analysis_root_patches_privilege_drop_in_init_d(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "init").write_text("#!/bin/sh\nexec /sbin/init\n")
+            init_d = root / "etc/init.d"
+            init_d.mkdir(parents=True)
+            shell_script = init_d / "S99ctf"
+            shell_script.write_text("#!/bin/sh\nsetsid cttyhack setuidgid 1337 sh\n")
+
+            changes = prepare_analysis_root(root)
+
+            self.assertEqual(
+                shell_script.read_text(),
+                "#!/bin/sh\nsetsid cttyhack setuidgid 0 sh\n",
+            )
+            self.assertFalse((init_d / "S99ctf.kphelper-original").exists())
+            self.assertTrue(any("S99ctf" in change for change in changes))
 
 
 class PackTests(unittest.TestCase):

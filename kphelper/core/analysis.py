@@ -25,45 +25,41 @@ class AnalysisEnvironment:
 
 
 def _patch_init_for_root(text):
-    replacements = (
-        (r"\bsetuidgid\s+\d+\s+", ""),
-        (r"\bsu\s+[^\s]+\s+-c\s+(['\"]?)(?:/bin/)?(?:ba)?sh\1", "sh"),
-        (r"\bchroot\s+--userspec=[^\s]+\s+", "chroot "),
-        (r"\brunuser\s+-u\s+[^\s]+\s+--\s+", ""),
-    )
-    modified = text
+    pattern = r"(?m)^(\s*setsid\s+cttyhack\s+setuidgid\s+)1337(\s+sh\s*)$"
+    modified, count = re.subn(pattern, r"\g<1>0\g<2>", text)
     changes = []
-    for pattern, replacement in replacements:
-        modified, count = re.subn(pattern, replacement, modified)
-        if count:
-            changes.append("removed privilege drop matching %s" % pattern)
-
-    sysctl_lines = (
-        "echo 0 > /proc/sys/kernel/kptr_restrict 2>/dev/null || true\n"
-        "echo 0 > /proc/sys/kernel/dmesg_restrict 2>/dev/null || true\n"
-    )
-    insertion = re.search(r"(?m)^\s*(?:exec\s+)?(?:setsid\s+)?(?:cttyhack\s+)?(?:setuidgid\s+\d+\s+)?(?:/bin/)?(?:ba)?sh\b", modified)
-    if insertion:
-        modified = modified[:insertion.start()] + sysctl_lines + modified[insertion.start():]
-        changes.append("enabled root symbol and dmesg access before final shell")
-    else:
-        modified += "\n" + sysctl_lines
-        changes.append("appended symbol access sysctl configuration")
+    if count:
+        changes.append("changed setsid cttyhack setuidgid 1337 sh to UID/GID 0")
     return modified, changes
 
 
+def _startup_files(root_dir):
+    root_dir = Path(root_dir)
+    candidates = [root_dir / "init", root_dir / "etc/inittab", root_dir / "etc/rcS"]
+    init_d = root_dir / "etc/init.d"
+    if init_d.is_dir():
+        candidates.extend(sorted(path for path in init_d.iterdir() if path.is_file()))
+    return [path for path in candidates if path.is_file()]
+
+
 def prepare_analysis_root(root_dir):
-    init_path = Path(root_dir) / "init"
-    if not init_path.is_file():
-        raise KphelperError("analysis rootfs requires an /init script")
-    original = init_path.read_text(encoding="utf-8", errors="replace")
-    patched, changes = _patch_init_for_root(original)
-    if patched == original:
-        raise KphelperError("cannot identify a safe root shell patch in /init")
-    backup = init_path.with_name("init.kphelper-original")
-    shutil.copy2(init_path, backup)
-    init_path.write_text(patched, encoding="utf-8")
-    init_path.chmod(init_path.stat().st_mode | 0o100)
+    files = _startup_files(root_dir)
+    if not files:
+        raise KphelperError("analysis rootfs has no supported startup scripts")
+
+    changes = []
+    for path in files:
+        original = path.read_text(encoding="utf-8", errors="replace")
+        patched, file_changes = _patch_init_for_root(original)
+        if patched == original:
+            continue
+        path.write_text(patched, encoding="utf-8")
+        changes.extend("%s: %s" % (path.relative_to(root_dir), change) for change in file_changes)
+
+    if not changes:
+        raise KphelperError(
+            "cannot find exact startup line: setsid cttyhack setuidgid 1337 sh"
+        )
     return changes
 
 
