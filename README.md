@@ -235,7 +235,13 @@ kphelper checksec
 kphelper checksec rootfs.cpio
 kphelper checksec rootfs.cpio.gz --root root
 kphelper checksec -r ./run.sh rootfs.cpio --no-color
+kphelper checksec --live
+kphelper checksec --all --boot-timeout 30
 ```
+
+The default mode performs static analysis only. `--live` starts `run.sh` and performs runtime probes only. `--all` always renders the static report and then appends live results; if no interactive guest shell is reached, the live section is marked `Skipped` instead of discarding the static report. Use `--boot-timeout` and `--command-timeout` for slow guests.
+
+Live probes only supplement information that static analysis cannot confirm. For example, statically detected `kptr_restrict` and `dmesg_restrict` values are reused rather than read again. Permission-dependent probes are reported as `Skipped` or `Hidden` instead of aborting the complete report.
 
 The output uses color by default:
 

@@ -1,93 +1,111 @@
-from .checksec import detect_runsec, scan_init
-from .checksec_report import render_report
-from .errors import KphelperError
-from .ksym import GuestShell, parse_kptr_value, parse_kallsyms
-from .probe_report import render_live_report
+import re
+
+from .formatting import UNKNOWN
+from .ksym import GuestShell, parse_kallsyms, parse_kptr_value
 from .session import managed_session, local_target, remote_target
 from .symbols import DEFAULT_SYMBOLS
 
 
-class LiveProbeError(KphelperError):
-    pass
+SKIPPED = "Skipped"
+READABLE = "Readable"
+HIDDEN = "Hidden"
 
 
-class ProbeSessionError(LiveProbeError):
-    pass
+def _result(status, detail=None, value=None):
+    result = {"status": status}
+    if detail:
+        result["detail"] = detail
+    if value is not None:
+        result["value"] = value
+    return result
 
 
-def _ensure_shell(shell):
-    if not shell.ready:
-        raise ProbeSessionError("live probe did not reach an interactive shell prompt")
+def _known_static_value(static_rootfs, name):
+    if not static_rootfs:
+        return None
+    value = static_rootfs.get(name, UNKNOWN)
+    return None if value == UNKNOWN else value
 
 
-def _merge_runtime_state(static_run, live_result):
-    merged = dict(static_run)
-    for key, value in live_result.items():
-        if value is None:
-            continue
-        merged[key] = value
-    return merged
+def _probe_sysctl(shell, name, static_rootfs=None):
+    static_value = _known_static_value(static_rootfs, name)
+    if static_value is not None:
+        return _result(SKIPPED, "known from rootfs startup scripts", static_value)
+
+    output, status = shell.run(
+        "cat /proc/sys/kernel/%s 2>/dev/null" % name
+    )
+    value = parse_kptr_value(output)
+    if status != 0 or value is None:
+        return _result(SKIPPED, "not accessible from guest shell")
+    return _result(READABLE, value=value)
 
 
-def probe_kallsyms(io, timeout=8, names=DEFAULT_SYMBOLS):
-    shell = GuestShell(io, timeout=timeout)
-    shell.run("test -r /proc/kallsyms || mount -t proc none /proc 2>/dev/null || true")
-    _ensure_shell(shell)
+def _probe_kallsyms(shell, names, kptr_result):
+    if kptr_result.get("value") in {1, 2}:
+        return _result(HIDDEN, "kptr_restrict=%s" % kptr_result["value"]), {}
 
-    kptr_output, _status = shell.run("cat /proc/sys/kernel/kptr_restrict 2>/dev/null || echo unknown")
-    kptr = parse_kptr_value(kptr_output)
-    if kptr is None:
-        raise LiveProbeError("cannot read /proc/sys/kernel/kptr_restrict")
+    output, status = shell.run("cat /proc/kallsyms 2>/dev/null")
+    if status != 0:
+        return _result(SKIPPED, "not accessible from guest shell"), {}
 
-    if kptr != 0:
-        return {"kptr_restrict": kptr, "kallsyms": "Hidden", "module_base_leak": "Hidden", "symbols": {}}
+    symbols = parse_kallsyms(output, names)
+    nonzero = re.search(r"^(?!0+\s)[0-9a-fA-F]+\s+\S+\s+\S+", output, flags=re.MULTILINE)
+    if not nonzero:
+        return _result(HIDDEN, "addresses are zero or unavailable"), {}
+    return _result(READABLE), symbols
 
-    kallsyms_output, _status = shell.run("cat /proc/kallsyms 2>/dev/null || echo unknown")
-    symbols = parse_kallsyms(kallsyms_output, names)
-    kallsyms_state = "Readable" if symbols else "Unknown"
 
-    module_probe = shell.run("ls /sys/module 2>/dev/null | head -n 1")
-    module_base_state = "Unknown"
-    if module_probe[0].strip():
-        module_name = module_probe[0].splitlines()[0].strip()
-        if module_name:
-            text, _status = shell.run(f"cat /sys/module/{module_name}/sections/.text 2>/dev/null || echo unknown")
-            module_base_state = "Readable" if text.strip() and "unknown" not in text.lower() else "Unknown"
+def _probe_module_base(shell):
+    output, status = shell.run(
+        "for f in /sys/module/*/sections/.text; do "
+        "test -r \"$f\" || continue; v=$(cat \"$f\" 2>/dev/null); "
+        "test -n \"$v\" && printf '%s %s\\n' \"$f\" \"$v\" && break; done"
+    )
+    if status != 0 or not output.strip():
+        return _result(SKIPPED, "no readable module .text section")
+    return _result(READABLE, detail=output.strip().splitlines()[-1])
+
+
+def probe_runtime(io, static_rootfs=None, boot_timeout=30, command_timeout=8, names=DEFAULT_SYMBOLS):
+    shell = GuestShell(io, timeout=command_timeout, boot_timeout=boot_timeout)
+    shell.wait_ready()
+
+    uid_output, uid_status = shell.run("id -u 2>/dev/null")
+    uid = uid_output.strip().splitlines()[-1] if uid_status == 0 and uid_output.strip() else UNKNOWN
+
+    kptr_result = _probe_sysctl(shell, "kptr_restrict", static_rootfs)
+    dmesg_result = _probe_sysctl(shell, "dmesg_restrict", static_rootfs)
+    kallsyms_result, symbols = _probe_kallsyms(shell, names, kptr_result)
+    module_result = _probe_module_base(shell)
 
     return {
-        "kptr_restrict": kptr,
-        "kallsyms": kallsyms_state,
-        "module_base_leak": module_base_state,
+        "User ID": _result(READABLE, value=uid),
+        "kptr_restrict": kptr_result,
+        "dmesg_restrict": dmesg_result,
+        "kallsyms": kallsyms_result,
+        "Module base leak": module_result,
         "symbols": symbols,
     }
 
 
-def probe_guest_runtime(run_path="./run.sh", timeout=8, names=DEFAULT_SYMBOLS):
-    static_run = detect_runsec(run_path)
+def probe_guest_runtime(run_path="./run.sh", static_rootfs=None, boot_timeout=30, command_timeout=8, names=DEFAULT_SYMBOLS):
     with managed_session(local_target, run_path) as io:
-        live_result = probe_kallsyms(io, timeout=timeout, names=names)
-    return {
-        "static": static_run,
-        "live": live_result,
-        "merged": _merge_runtime_state(static_run, live_result),
-    }
+        return probe_runtime(
+            io,
+            static_rootfs=static_rootfs,
+            boot_timeout=boot_timeout,
+            command_timeout=command_timeout,
+            names=names,
+        )
 
 
-def probe_remote_runtime(ip, port, timeout=8, names=DEFAULT_SYMBOLS):
+def probe_remote_runtime(ip, port, static_rootfs=None, boot_timeout=30, command_timeout=8, names=DEFAULT_SYMBOLS):
     with managed_session(remote_target, ip, port) as io:
-        live_result = probe_kallsyms(io, timeout=timeout, names=names)
-    return {
-        "static": {},
-        "live": live_result,
-        "merged": _merge_runtime_state({}, live_result),
-    }
-
-
-def render_probe_report(probe_result, root_dir="root", color=True):
-    live_result = probe_result.get("live") or {}
-    merged = probe_result.get("merged") or {}
-    init_result = scan_init(root_dir) if root_dir else None
-    report = render_report(merged, init_result, color=color)
-    if live_result:
-        report += "\n\n" + render_live_report(live_result, color=color)
-    return report
+        return probe_runtime(
+            io,
+            static_rootfs=static_rootfs,
+            boot_timeout=boot_timeout,
+            command_timeout=command_timeout,
+            names=names,
+        )

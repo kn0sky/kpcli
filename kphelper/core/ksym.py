@@ -12,20 +12,40 @@ def validate_symbol_name(name):
 
 
 class GuestShell:
-    def __init__(self, io, timeout=8):
+    def __init__(self, io, timeout=8, boot_timeout=None):
         self.io = io
         self.timeout = timeout
+        self.boot_timeout = boot_timeout if boot_timeout is not None else timeout
         self.ready = False
 
+    def wait_ready(self):
+        if self.ready:
+            return
+
+        prompt_data = self.io.recvuntil(PROMPTS, timeout=self.boot_timeout) or b""
+        if not prompt_data.endswith(PROMPTS):
+            raise KphelperError(
+                "guest shell prompt not reached within %d seconds" % self.boot_timeout
+            )
+
+        marker = "__KPHELPER_READY_%s__" % uuid.uuid4().hex
+        self.io.sendline(("echo " + marker).encode())
+        data = self.io.recvuntil(marker.encode(), timeout=self.timeout) or b""
+        if marker.encode() not in data:
+            raise KphelperError("guest shell did not execute readiness probe")
+        self.io.recvuntil(PROMPTS, timeout=self.timeout)
+        self.ready = True
+
     def run(self, command):
-        if not self.ready:
-            self.io.recvuntil(PROMPTS, timeout=self.timeout)
-            self.ready = True
+        self.wait_ready()
 
         marker = "__KPHELPER_%s__" % uuid.uuid4().hex
-        self.io.sendline(("%s; echo %s:$?" % (command, marker)).encode())
-        data = self.io.recvuntil((marker + ":").encode(), timeout=self.timeout)
+        self.io.sendline(("%s; printf '\\n%s:%%s\\n' $?" % (command, marker)).encode())
+        data = self.io.recvuntil((marker + ":").encode(), timeout=self.timeout) or b""
+        if (marker + ":").encode() not in data:
+            raise KphelperError("guest command timed out: %s" % command)
         status_line = self.io.recvline(timeout=self.timeout) or b""
+        self.io.recvuntil(PROMPTS, timeout=self.timeout)
 
         output = data.rsplit((marker + ":").encode(), 1)[0]
         try:

@@ -1,5 +1,7 @@
-from kphelper.core.checksec import run_checksec
-from kphelper.core.probe import probe_guest_runtime, render_probe_report
+from kphelper.core.checksec import collect_checksec, run_checksec
+from kphelper.core.checksec_report import render_report
+from kphelper.core.errors import KphelperError
+from kphelper.core.probe import probe_guest_runtime
 from kphelper.core.probe_report import render_live_report
 
 
@@ -29,28 +31,68 @@ def register(subparsers):
         action="store_true",
         help="disable ANSI color output",
     )
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--live",
         action="store_true",
         help="run live runtime probe only",
     )
-    parser.add_argument(
+    mode.add_argument(
         "--all",
         action="store_true",
         help="run static checksec and live probe together",
+    )
+    parser.add_argument(
+        "--boot-timeout",
+        type=int,
+        default=30,
+        help="seconds to wait for the guest shell prompt, default: 30",
+    )
+    parser.add_argument(
+        "--command-timeout",
+        type=int,
+        default=8,
+        help="seconds to wait for each guest command, default: 8",
     )
     parser.set_defaults(handler=handle)
     return parser
 
 
+def _run_live(args, static_rootfs=None):
+    return probe_guest_runtime(
+        args.run,
+        static_rootfs=static_rootfs,
+        boot_timeout=args.boot_timeout,
+        command_timeout=args.command_timeout,
+    )
+
+
 def handle(args):
-    if args.all:
-        probe_result = probe_guest_runtime(args.run, timeout=8)
-        print(render_probe_report(probe_result, root_dir=args.root, color=not args.no_color))
-        return 0
+    color = not args.no_color
     if args.live:
-        live_result = probe_guest_runtime(args.run, timeout=8)
-        print(render_live_report(live_result, color=not args.no_color))
+        live_result = _run_live(args)
+        print(render_live_report(live_result, color=color))
         return 0
-    print(run_checksec(args.run, args.cpio, args.root, color=not args.no_color))
+
+    if args.all:
+        run_result, init_result = collect_checksec(args.run, args.cpio, args.root)
+        static_report = render_report(run_result, init_result, color=color)
+        try:
+            live_result = _run_live(args, static_rootfs=init_result)
+            live_report = render_live_report(live_result, color=color)
+        except KphelperError as error:
+            live_report = render_live_report(
+                {
+                    "User ID": {"status": "Skipped", "detail": str(error)},
+                    "kptr_restrict": {"status": "Skipped", "detail": "live probe unavailable"},
+                    "dmesg_restrict": {"status": "Skipped", "detail": "live probe unavailable"},
+                    "kallsyms": {"status": "Skipped", "detail": "live probe unavailable"},
+                    "Module base leak": {"status": "Skipped", "detail": "live probe unavailable"},
+                },
+                color=color,
+            )
+        print(static_report + "\n\n" + live_report)
+        return 0
+
+    print(run_checksec(args.run, args.cpio, args.root, color=color))
     return 0
