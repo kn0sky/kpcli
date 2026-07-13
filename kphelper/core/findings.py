@@ -44,6 +44,19 @@ class RuntimeProbeReport:
     findings: Dict[str, Finding]
     symbols: Dict[str, int]
 
+    @classmethod
+    def from_mapping(cls, result):
+        if isinstance(result, cls):
+            return result
+        return cls(
+            findings={
+                name: Finding.from_mapping(value)
+                for name, value in result.items()
+                if name not in {"symbols", "kaslr"}
+            },
+            symbols=dict(result.get("symbols") or {}),
+        )
+
     def to_dict(self):
         result = {name: finding.to_dict() for name, finding in self.findings.items()}
         result["symbols"] = dict(self.symbols)

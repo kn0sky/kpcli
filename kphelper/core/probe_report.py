@@ -1,4 +1,4 @@
-from .findings import Finding
+from .findings import Finding, RuntimeProbeReport
 from .formatting import BOLD, BLUE, DIM, GREEN, MAGENTA, RED, UNKNOWN, YELLOW, colorize
 from .symbols import DEFAULT_SYMBOLS, render_symbol_assignments, render_symbol_offsets
 
@@ -24,12 +24,15 @@ def live_status_line(name, result, color=True):
     return f"    {label}: {colored_value}"
 
 
-def render_live_report(live_result, color=True):
+def render_live_report(live_result, color=True, kaslr=None):
+    if kaslr is None and not isinstance(live_result, RuntimeProbeReport):
+        kaslr = live_result.get("kaslr") or {}
+    report = RuntimeProbeReport.from_mapping(live_result)
     lines = [colorize("[*] Live runtime probe", MAGENTA + BOLD, color)]
     for name in ["User ID", "kptr_restrict", "dmesg_restrict", "kallsyms", "Module base leak"]:
-        lines.append(live_status_line(name, live_result.get(name, {"status": UNKNOWN}), color=color))
+        lines.append(live_status_line(name, report.findings.get(name, Finding(UNKNOWN)), color=color))
 
-    symbols = live_result.get("symbols") or {}
+    symbols = report.symbols
     if symbols:
         lines.append("")
         lines.append(colorize("[*] Live symbols", MAGENTA + BOLD, color))
@@ -45,7 +48,7 @@ def render_live_report(live_result, color=True):
     lines.append(colorize("[*] C assignments", MAGENTA + BOLD, color))
     lines.append(render_symbol_assignments(symbols, DEFAULT_SYMBOLS))
 
-    kaslr = live_result.get("kaslr") or {}
+    kaslr = kaslr or {}
     offsets = kaslr.get("offsets") or {}
     if offsets:
         lines.append("")

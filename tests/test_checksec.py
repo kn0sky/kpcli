@@ -107,12 +107,13 @@ class ChecksecParsingTests(unittest.TestCase):
 
             result = detect_runsec(run_path)
 
-        self.assertEqual(result["KASLR"], "Disabled")
-        self.assertEqual(result["KPTI"], "Disabled")
-        self.assertEqual(result["SMEP"], "Enabled")
-        self.assertEqual(result["SMAP"], "Disabled")
-        self.assertEqual(result["KGDB"], "Enabled")
-        self.assertEqual(result["Initrd"], "rootfs.cpio")
+        self.assertEqual(result["KASLR"].status, "Disabled")
+        self.assertEqual(result["KPTI"].status, "Disabled")
+        self.assertEqual(result["SMEP"].status, "Enabled")
+        self.assertEqual(result["SMAP"].status, "Disabled")
+        self.assertEqual(result["KGDB"].status, "Enabled")
+        self.assertEqual(result["Initrd"].status, "rootfs.cpio")
+        self.assertEqual(result["KASLR"].source, "qemu")
 
     def test_detect_runsec_common_enabled_settings(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -126,11 +127,11 @@ class ChecksecParsingTests(unittest.TestCase):
 
             result = detect_runsec(run_path)
 
-        self.assertEqual(result["KASLR"], "Enabled")
-        self.assertEqual(result["KPTI"], "Enabled")
-        self.assertEqual(result["SMEP"], "Enabled")
-        self.assertEqual(result["SMAP"], "Enabled")
-        self.assertEqual(result["KGDB"], "Enabled")
+        self.assertEqual(result["KASLR"].status, "Enabled")
+        self.assertEqual(result["KPTI"].status, "Enabled")
+        self.assertEqual(result["SMEP"].status, "Enabled")
+        self.assertEqual(result["SMAP"].status, "Enabled")
+        self.assertEqual(result["KGDB"].status, "Enabled")
 
     def test_detect_sysctl_write_extracts_value(self):
         text = 'echo 0 > /proc/sys/kernel/kptr_restrict\n'
@@ -207,8 +208,9 @@ class ScanTests(unittest.TestCase):
 
             result = scan_init(base)
 
-        self.assertEqual(result["Root shell"], "Likely root")
-        self.assertEqual(result["kptr_restrict"], "0")
+        self.assertEqual(result["Root shell"].status, "Likely root")
+        self.assertEqual(result["kptr_restrict"].status, "0")
+        self.assertEqual(result["Root shell"].source, "rootfs")
 
 
 class DiscoveryTests(unittest.TestCase):

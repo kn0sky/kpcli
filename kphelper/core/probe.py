@@ -1,6 +1,6 @@
 import re
 
-from .findings import Finding
+from .findings import Finding, RuntimeProbeReport
 from .formatting import UNKNOWN
 from .guest import GuestShell, GuestTimeouts
 from .ksym import kallsyms_query_command, parse_kallsyms, parse_kptr_value
@@ -20,8 +20,8 @@ def _result(status, detail=None, value=None, source="runtime"):
 def _known_static_value(static_rootfs, name):
     if not static_rootfs:
         return None
-    value = static_rootfs.get(name, UNKNOWN)
-    return None if value == UNKNOWN else value
+    finding = Finding.from_mapping(static_rootfs.get(name, UNKNOWN))
+    return None if finding.status == UNKNOWN else finding.status
 
 
 def _probe_sysctl(shell, name, static_rootfs=None):
@@ -74,14 +74,16 @@ def probe_runtime(io, static_rootfs=None, timeouts=None, names=DEFAULT_SYMBOLS):
     kallsyms_result, symbols = _probe_kallsyms(shell, names, kptr_result)
     module_result = _probe_module_base(shell)
 
-    return {
-        "User ID": _result(READABLE, value=uid),
-        "kptr_restrict": kptr_result,
-        "dmesg_restrict": dmesg_result,
-        "kallsyms": kallsyms_result,
-        "Module base leak": module_result,
-        "symbols": symbols,
-    }
+    return RuntimeProbeReport(
+        findings={
+            "User ID": _result(READABLE, value=uid),
+            "kptr_restrict": kptr_result,
+            "dmesg_restrict": dmesg_result,
+            "kallsyms": kallsyms_result,
+            "Module base leak": module_result,
+        },
+        symbols=symbols,
+    )
 
 
 def probe_guest_runtime(run_path="./run.sh", static_rootfs=None, timeouts=None, names=DEFAULT_SYMBOLS):

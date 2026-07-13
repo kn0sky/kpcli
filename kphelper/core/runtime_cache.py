@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .checksec import detect_runsec
 from .errors import KphelperError
-from .findings import Finding
+from .findings import RuntimeProbeReport
 from .qemu import load_qemu_run
 from .symbols import (
     DEFAULT_SYMBOLS,
@@ -65,7 +65,7 @@ def build_run_fingerprint(run_path):
 
 
 def build_kaslr_metadata(run_path, runtime_symbols):
-    state = detect_runsec(run_path)["KASLR"]
+    state = detect_runsec(run_path)["KASLR"].status
     runtime_anchor = next(
         (name for name in KASLR_ANCHORS if runtime_symbols.get(name)),
         None,
@@ -115,13 +115,11 @@ def build_kaslr_metadata(run_path, runtime_symbols):
     return result
 
 
-def _serialize_runtime(live_result):
-    serialized = {}
-    for name, value in live_result.items():
-        if name in {"symbols", "kaslr"}:
-            continue
-        serialized[name] = Finding.from_mapping(value).to_dict()
-    return serialized
+def _serialize_runtime(report):
+    return {
+        name: finding.to_dict()
+        for name, finding in report.findings.items()
+    }
 
 
 def _write_atomic(path, content):
@@ -154,7 +152,8 @@ def save_runtime_report(
     report_path=DEFAULT_RUNTIME_REPORT,
     header_path=DEFAULT_RUNTIME_HEADER,
 ):
-    symbols = {name: int(value) for name, value in (live_result.get("symbols") or {}).items()}
+    report = RuntimeProbeReport.from_mapping(live_result)
+    symbols = {name: int(value) for name, value in report.symbols.items()}
     kaslr = build_kaslr_metadata(run_path, symbols)
     payload = {
         "schema_version": RUNTIME_REPORT_VERSION,
@@ -164,7 +163,7 @@ def save_runtime_report(
             "run": str(Path(run_path).resolve()),
         },
         "fingerprint": build_run_fingerprint(run_path),
-        "runtime": _serialize_runtime(live_result),
+        "runtime": _serialize_runtime(report),
         "symbols": symbols,
         "kaslr": kaslr,
     }

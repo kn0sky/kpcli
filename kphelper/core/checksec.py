@@ -6,11 +6,16 @@ from .checksec_report import render_report
 from .cpio import unpack_cpio
 from .discovery import find_cpio
 from .errors import KphelperError
+from .findings import Finding
 from .formatting import DISABLED, ENABLED, UNKNOWN
 from .qemu import parse_qemu_run_text, resolve_run_file
 
 
 DEFAULT_CHECKSEC_ROOT = ".kphelper/checksec-root"
+
+
+def _finding(value, source):
+    return Finding.from_value(value, source=source)
 
 
 def read_text(path):
@@ -38,39 +43,39 @@ def has_any(text, needles):
 
 def detect_runsec(run_path):
     run_path = Path(run_path)
-    result = {
+    result = {name: _finding(value, "qemu") for name, value in {
         "run.sh": str(run_path), "cmdline": UNKNOWN, "KASLR": UNKNOWN,
         "SMEP": UNKNOWN, "SMAP": UNKNOWN, "KPTI": UNKNOWN,
         "KGDB": UNKNOWN, "Initrd": UNKNOWN,
-    }
+    }.items()}
     if not run_path.exists():
-        result["run.sh"] = "Missing"
+        result["run.sh"] = _finding("Missing", "qemu")
         return result
     text = read_text(run_path)
     config = parse_qemu_run_text(text, run_path)
     cmdline = config.cmdline
     cpu_args = config.cpu
-    result["cmdline"] = cmdline or UNKNOWN
+    result["cmdline"] = _finding(cmdline or UNKNOWN, "qemu")
     if "nokaslr" in cmdline:
-        result["KASLR"] = DISABLED
+        result["KASLR"] = _finding(DISABLED, "qemu")
     elif re.search(r"(^|\s)kaslr(\s|$)", cmdline):
-        result["KASLR"] = ENABLED
+        result["KASLR"] = _finding(ENABLED, "qemu")
     if "nopti" in cmdline:
-        result["KPTI"] = DISABLED
+        result["KPTI"] = _finding(DISABLED, "qemu")
     elif has_any(cmdline, ["kpti=1", "pti=on"]):
-        result["KPTI"] = ENABLED
+        result["KPTI"] = _finding(ENABLED, "qemu")
     if has_any(cpu_args, ["-smep", "smep=off"]) or "nosmep" in cmdline:
-        result["SMEP"] = DISABLED
+        result["SMEP"] = _finding(DISABLED, "qemu")
     elif has_any(cpu_args, ["+smep", "smep"]):
-        result["SMEP"] = ENABLED
+        result["SMEP"] = _finding(ENABLED, "qemu")
     if has_any(cpu_args, ["-smap", "smap=off"]) or "nosmap" in cmdline:
-        result["SMAP"] = DISABLED
+        result["SMAP"] = _finding(DISABLED, "qemu")
     elif has_any(cpu_args, ["+smap", "smap"]):
-        result["SMAP"] = ENABLED
-    result["KGDB"] = ENABLED if config.gdb_enabled else DISABLED
+        result["SMAP"] = _finding(ENABLED, "qemu")
+    result["KGDB"] = _finding(ENABLED if config.gdb_enabled else DISABLED, "qemu")
     initrd = config.initrd
     if initrd:
-        result["Initrd"] = initrd
+        result["Initrd"] = _finding(initrd, "qemu")
     return result
 
 
@@ -91,33 +96,33 @@ def detect_sysctl_write(text, name):
 def scan_init(root_dir):
     root_dir = Path(root_dir)
     scripts = startup_script_paths(root_dir)
-    result = {
+    result = {name: _finding(value, "rootfs") for name, value in {
         "Rootfs": str(root_dir), "Init": "Missing", "Scripts": "Missing",
         "Root shell": UNKNOWN, "Module load": UNKNOWN, "kptr_restrict": UNKNOWN,
         "dmesg_restrict": UNKNOWN, "kallsyms": UNKNOWN,
         "Module base leak": UNKNOWN, "Device permissions": UNKNOWN,
-    }
+    }.items()}
     if not scripts:
         return result
     text = "\n".join(read_text(path) for path in scripts)
     init = root_dir / "init"
     if init.exists():
-        result["Init"] = str(init)
-    result["Scripts"] = ", ".join(str(path) for path in scripts)
+        result["Init"] = _finding(str(init), "rootfs")
+    result["Scripts"] = _finding(", ".join(str(path) for path in scripts), "rootfs")
     if has_any(text, ["setuidgid", "su "]):
-        result["Root shell"] = "Likely non-root"
+        result["Root shell"] = _finding("Likely non-root", "rootfs")
     elif re.search(r"\b(sh|bash|cttyhack\s+sh)\b", text):
-        result["Root shell"] = "Likely root"
+        result["Root shell"] = _finding("Likely root", "rootfs")
     if re.search(r"\binsmod\b|\bmodprobe\b", text):
-        result["Module load"] = "Found"
-    result["kptr_restrict"] = detect_sysctl_write(text, "kptr_restrict")
-    result["dmesg_restrict"] = detect_sysctl_write(text, "dmesg_restrict")
+        result["Module load"] = _finding("Found", "rootfs")
+    result["kptr_restrict"] = _finding(detect_sysctl_write(text, "kptr_restrict"), "rootfs")
+    result["dmesg_restrict"] = _finding(detect_sysctl_write(text, "dmesg_restrict"), "rootfs")
     if "/proc/kallsyms" in text:
-        result["kallsyms"] = "Referenced"
+        result["kallsyms"] = _finding("Referenced", "rootfs")
     if "/sys/module/" in text and "/sections/" in text:
-        result["Module base leak"] = "Referenced"
+        result["Module base leak"] = _finding("Referenced", "rootfs")
     if re.search(r"\bchmod\b|\bchown\b|mknod", text):
-        result["Device permissions"] = "Configured in init"
+        result["Device permissions"] = _finding("Configured in init", "rootfs")
     return result
 
 
@@ -126,11 +131,11 @@ def collect_checksec(run_path="run.sh", cpio_path=None, root_dir=DEFAULT_CHECKSE
     init_result = None
     cpio_path = (
         cpio_path
-        or resolve_initrd_path(run_result["Initrd"], run_path)
+        or resolve_initrd_path(run_result["Initrd"].status, run_path)
         or find_cpio(Path(run_path).parent)
     )
     if cpio_path:
-        run_result["Initrd"] = str(cpio_path)
+        run_result["Initrd"] = _finding(str(cpio_path), "filesystem")
         if not shutil.which("cpio"):
             raise KphelperError("cpio not found")
         init_result = scan_init(unpack_cpio(cpio_path, root_dir))

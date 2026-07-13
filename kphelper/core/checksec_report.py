@@ -1,3 +1,4 @@
+from .findings import Finding
 from .formatting import BOLD, BLUE, CYAN, DIM, DISABLED, ENABLED, GREEN, MAGENTA, RED, UNKNOWN, YELLOW, colorize
 
 
@@ -18,7 +19,10 @@ def status_color(name, value):
     return BLUE
 
 
-def status_line(name, value, detail=None, color=True):
+def status_line(name, result, color=True):
+    finding = Finding.from_mapping(result)
+    value = finding.status
+    detail = finding.detail
     value = colorize(value, status_color(name, value), color)
     label = colorize(f"{name:<18}", BOLD, color)
     if detail:
@@ -36,8 +40,8 @@ def render_report(run_result, init_result=None, color=True):
     lines.append(status_line("KGDB", run_result["KGDB"], color=color))
     lines.append(status_line("Initrd", run_result["Initrd"], color=color))
 
-    cmdline = run_result.get("cmdline")
-    if cmdline and cmdline != UNKNOWN:
+    cmdline = Finding.from_mapping(run_result.get("cmdline", UNKNOWN))
+    if cmdline.status != UNKNOWN:
         lines.append(status_line("Cmdline", cmdline, color=color))
 
     if init_result:

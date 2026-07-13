@@ -1,6 +1,7 @@
 from kphelper.core.analysis import analysis_address_scope, resolve_analysis_run
 from kphelper.core.checksec import detect_runsec
 from kphelper.core.errors import KphelperError
+from kphelper.core.findings import RuntimeProbeReport
 from kphelper.core.guest import add_guest_timeout_arguments, timeouts_from_args
 from kphelper.core.ksym import extract_guest_ksyms
 from kphelper.core.runtime_cache import (
@@ -55,7 +56,7 @@ def _runtime_symbols(args, names):
         source = "guest:/proc/kallsyms"
     else:
         run_result = detect_runsec(args.run)
-        if run_result["run.sh"] == "Missing":
+        if run_result["run.sh"].status == "Missing":
             raise KphelperError("%s not found" % args.run)
         factory, factory_args = local_target, (args.run,)
         source = "guest:/proc/kallsyms"
@@ -75,7 +76,7 @@ def _runtime_symbols(args, names):
         }
     else:
         cached = save_runtime_report(
-            {"symbols": runtime},
+            RuntimeProbeReport(findings={}, symbols=runtime),
             args.run,
             analysis=args.analysis,
         )

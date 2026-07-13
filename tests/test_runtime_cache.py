@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from kphelper.core.errors import KphelperError
+from kphelper.core.findings import Finding, RuntimeProbeReport
 from kphelper.core.runtime_cache import (
     build_kaslr_metadata,
     load_runtime_report,
@@ -33,7 +34,10 @@ class RuntimeCacheTests(unittest.TestCase):
             header_path = Path(tmp) / ".kphelper/runtime-symbols.h"
 
             saved = save_runtime_report(
-                {"symbols": {"commit_creds": 0xffffffff81070000}},
+                RuntimeProbeReport(
+                    findings={"User ID": Finding("Readable", value="0")},
+                    symbols={"commit_creds": 0xffffffff81070000},
+                ),
                 run_path,
                 report_path=report_path,
                 header_path=header_path,
@@ -41,6 +45,7 @@ class RuntimeCacheTests(unittest.TestCase):
             loaded = load_runtime_report(report_path)
 
             self.assertEqual(loaded["fingerprint"]["digest"], saved["fingerprint"]["digest"])
+            self.assertEqual(loaded["runtime"]["User ID"]["value"], "0")
             self.assertEqual(loaded["symbols"]["commit_creds"], 0xffffffff81070000)
             self.assertIn("unsigned long commit_creds", header_path.read_text())
 
@@ -51,7 +56,7 @@ class RuntimeCacheTests(unittest.TestCase):
             report_path = Path(tmp) / "runtime-report.json"
             header_path = Path(tmp) / "runtime-symbols.h"
             save_runtime_report(
-                {"symbols": {}},
+                RuntimeProbeReport(findings={}, symbols={}),
                 run_path,
                 report_path=report_path,
                 header_path=header_path,

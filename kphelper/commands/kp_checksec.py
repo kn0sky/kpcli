@@ -2,7 +2,7 @@ from kphelper.core.analysis import analysis_address_scope, resolve_analysis_run
 from kphelper.core.checksec import DEFAULT_CHECKSEC_ROOT, collect_checksec, run_checksec
 from kphelper.core.checksec_report import render_report
 from kphelper.core.errors import KphelperError
-from kphelper.core.findings import Finding
+from kphelper.core.findings import Finding, RuntimeProbeReport
 from kphelper.core.guest import add_guest_timeout_arguments, timeouts_from_args
 from kphelper.core.probe import probe_guest_runtime
 from kphelper.core.probe_report import render_live_report
@@ -72,9 +72,7 @@ def _run_live(args, static_rootfs=None):
 
 def _render_and_cache_live(args, live_result, color):
     cached = save_runtime_report(live_result, args.run, analysis=args.analysis)
-    enriched = dict(live_result)
-    enriched["kaslr"] = cached["kaslr"]
-    report = render_live_report(enriched, color=color)
+    report = render_live_report(live_result, color=color, kaslr=cached["kaslr"])
     report += "\n[*] Runtime report: %s" % DEFAULT_RUNTIME_REPORT
     report += "\n[*] C assignments: %s" % DEFAULT_RUNTIME_HEADER
     return report
@@ -101,8 +99,8 @@ def handle(args):
             live_result = _run_live(args, static_rootfs=init_result)
             live_report = _render_and_cache_live(args, live_result, color)
         except KphelperError as error:
-            live_report = render_live_report(
-                {
+            fallback = RuntimeProbeReport(
+                findings={
                     name: Finding(
                         "Skipped",
                         detail=str(error) if name == "User ID" else "live probe unavailable",
@@ -115,8 +113,9 @@ def handle(args):
                         "Module base leak",
                     ]
                 },
-                color=color,
+                symbols={},
             )
+            live_report = render_live_report(fallback, color=color)
         combined = static_report + "\n\n" + live_report
         if args.analysis:
             combined += "\n[*] Analysis address scope: %s" % analysis_address_scope(args.run)
