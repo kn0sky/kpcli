@@ -3,32 +3,10 @@ import gzip
 import re
 from pathlib import Path
 
-from .constants import LOCAL_EXP, PROMPTS, REMOTE_EXP
+from .constants import LOCAL_EXP, REMOTE_EXP
 from .errors import KphelperError
 from .guest import GuestShell
 from .pwn import log
-
-
-def verify_remote_size(io, remote, expected_size, p=PROMPTS):
-    io.sendlineafter(p, b"wc -c < %s" % remote.encode())
-    try:
-        data = io.recvuntil(p, timeout=5)
-    except EOFError:
-        raise KphelperError("upload verification failed: connection closed")
-
-    numbers = re.findall(rb"\b([0-9]+)\b", data or b"")
-    if not numbers:
-        raise KphelperError("upload verification failed: cannot parse wc output")
-
-    actual_size = int(numbers[-1])
-    if actual_size != expected_size:
-        raise KphelperError(
-            "upload verification failed: remote size %d != local size %d"
-            % (actual_size, expected_size)
-        )
-
-    log.success("upload verified: %d bytes", actual_size)
-    return True
 
 
 def _run_checked(shell, command, action):
@@ -39,7 +17,7 @@ def _run_checked(shell, command, action):
     return output
 
 
-def upload(io, local=LOCAL_EXP, remote=REMOTE_EXP, p=PROMPTS, shell=None):
+def upload(io, local=LOCAL_EXP, remote=REMOTE_EXP, shell=None):
     local = Path(local)
     if not local.exists():
         log.info("local exp not found, skip upload: %s", local)

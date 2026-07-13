@@ -1,4 +1,5 @@
 import re
+import shlex
 
 from .errors import KphelperError
 from .guest import GuestShell, GuestTimeouts
@@ -31,9 +32,15 @@ def parse_kallsyms(output, names=DEFAULT_SYMBOLS):
     return result
 
 
-def kallsyms_grep_command(name):
-    validate_symbol_name(name)
-    return "grep ' %s$' /proc/kallsyms" % name
+def kallsyms_query_command(names):
+    names = tuple(dict.fromkeys(names))
+    for name in names:
+        validate_symbol_name(name)
+    conditions = "|".join(re.escape(name) for name in names)
+    program = '$1 !~ /^0+$/ && !seen { print; seen=1 }'
+    if conditions:
+        program += " $3 ~ /^(%s)$/ { print }" % conditions
+    return "test -r /proc/kallsyms && awk %s /proc/kallsyms" % shlex.quote(program)
 
 
 def extract_guest_ksyms(io, names=DEFAULT_SYMBOLS, timeouts=None):
@@ -50,16 +57,7 @@ def extract_guest_ksyms(io, names=DEFAULT_SYMBOLS, timeouts=None):
     if kptr != 0:
         raise KphelperError("/proc/kallsyms addresses are hidden: kptr_restrict=%d" % kptr)
 
-    symbols = {}
-    failures = []
-    for name in names:
-        output, status = shell.run(kallsyms_grep_command(name))
-        parsed = parse_kallsyms(output, (name,))
-        if name in parsed:
-            symbols[name] = parsed[name]
-        elif status not in {0, 1}:
-            failures.append("%s(status=%s)" % (name, status))
-
-    if not symbols and failures:
-        raise KphelperError("failed to query /proc/kallsyms: %s" % ", ".join(failures))
-    return symbols
+    output, status = shell.run(kallsyms_query_command(names))
+    if status != 0:
+        raise KphelperError("failed to query /proc/kallsyms (status=%s)" % status)
+    return parse_kallsyms(output, names)

@@ -1,11 +1,13 @@
+import os
 import shutil
+import stat
 import subprocess
 from pathlib import Path
 
 from .build import build_exp
 from .checksec import detect_runsec, resolve_initrd_path
 from .constants import LOCAL_EXP
-from .cpio import sh_quote, unpack_cpio
+from .cpio import CPIO_MARKER, preserved_metadata_state, run_cpio_command, unpack_cpio
 from .discovery import find_cpio
 from .errors import KphelperError
 from .pwn import log
@@ -17,6 +19,17 @@ DEFAULT_OUTPUT = "packed-rootfs.cpio.gz"
 DEFAULT_TARGET = "tmp/exp"
 
 
+def _make_directories_writable(root_dir):
+    root_dir = Path(root_dir)
+    root_dir.chmod(root_dir.stat().st_mode | stat.S_IRWXU)
+    for current, directories, _files in os.walk(root_dir):
+        current = Path(current)
+        current.chmod(current.stat().st_mode | stat.S_IRWXU)
+        directories[:] = [
+            name for name in directories if not (current / name).is_symlink()
+        ]
+
+
 def select_cpio(run_path="run.sh", cpio_path=None):
     if cpio_path:
         return Path(cpio_path)
@@ -26,7 +39,7 @@ def select_cpio(run_path="run.sh", cpio_path=None):
     if found:
         return found
 
-    found = find_cpio()
+    found = find_cpio(Path(run_path).parent)
     if found:
         return found
 
@@ -44,7 +57,14 @@ def ensure_clean_pack_root(root_dir):
     if root_dir.exists() and not root_dir.is_dir():
         raise KphelperError("pack root exists and is not a directory: %s" % root_dir)
     if root_dir.exists():
-        shutil.rmtree(root_dir)
+        try:
+            _make_directories_writable(root_dir)
+            shutil.rmtree(root_dir)
+        except OSError as error:
+            raise KphelperError(
+                "cannot clean %s; remove the root-owned directory with sudo and retry"
+                % root_dir
+            ) from error
     root_dir.mkdir(parents=True)
     return root_dir
 
@@ -62,7 +82,7 @@ def copy_exp_into_root(root_dir, local_exp=LOCAL_EXP, target=DEFAULT_TARGET):
     return target_path
 
 
-def repack_cpio(root_dir, output):
+def repack_cpio(root_dir, output, fakeroot_state=None):
     root_dir = Path(root_dir)
     output_path = Path(output)
     try:
@@ -72,9 +92,15 @@ def repack_cpio(root_dir, output):
     else:
         raise KphelperError("output must not be inside pack root: %s" % output_path)
     cmd_output = output_path.resolve()
-    cmd = "find . | cpio -o -H newc --quiet | gzip -9 > %s" % sh_quote(str(cmd_output))
+    cmd = "find . -print0 | cpio -o --format=newc --null --quiet | gzip -9 > \"$1\""
     try:
-        subprocess.run(["bash", "-o", "pipefail", "-c", cmd], cwd=root_dir, check=True)
+        run_cpio_command(
+            cmd,
+            root_dir,
+            fakeroot_state=fakeroot_state,
+            load_state=fakeroot_state is not None,
+            command_args=(cmd_output,),
+        )
     except FileNotFoundError as error:
         raise KphelperError("bash not found; initramfs operations require Linux/WSL") from error
     except subprocess.CalledProcessError as error:
@@ -86,10 +112,17 @@ def repack_cpio(root_dir, output):
 def pack_exp(cpio_path=None, run_path="run.sh", root_dir=DEFAULT_PACK_ROOT, output=DEFAULT_OUTPUT, target=DEFAULT_TARGET, update_run=True):
     build_exp()
     cpio_path = select_cpio(run_path, cpio_path)
-    root_dir = ensure_clean_pack_root(root_dir)
-    unpack_cpio(cpio_path, root_dir)
-    copy_exp_into_root(root_dir, LOCAL_EXP, target)
-    output = repack_cpio(root_dir, output)
+    with preserved_metadata_state() as fakeroot_state:
+        root_dir = ensure_clean_pack_root(root_dir)
+        unpack_cpio(
+            cpio_path,
+            root_dir,
+            reuse_existing=False,
+            fakeroot_state=fakeroot_state,
+        )
+        (Path(root_dir) / CPIO_MARKER).unlink(missing_ok=True)
+        copy_exp_into_root(root_dir, LOCAL_EXP, target)
+        output = repack_cpio(root_dir, output, fakeroot_state=fakeroot_state)
     if update_run:
         update_run_initrd(run_path, output)
         log.success("updated %s initrd -> %s", run_path, output)

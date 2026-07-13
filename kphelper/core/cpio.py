@@ -1,6 +1,9 @@
 import json
+import os
 import shutil
 import subprocess
+import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 from .errors import KphelperError
@@ -43,7 +46,36 @@ def read_marker(marker):
         return None
 
 
-def unpack_cpio(cpio_path, root_dir="root", reuse_existing=True):
+@contextmanager
+def preserved_metadata_state():
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        yield None
+        return
+    if not shutil.which("fakeroot"):
+        raise KphelperError(
+            "fakeroot not found; install fakeroot or use the command's --sudo option"
+        )
+    with tempfile.TemporaryDirectory(prefix="kphelper-fakeroot-") as temporary:
+        yield Path(temporary) / "state"
+
+
+def run_cpio_command(
+    command,
+    cwd,
+    fakeroot_state=None,
+    load_state=False,
+    command_args=(),
+):
+    arguments = ["bash", "-o", "pipefail", "-c", command]
+    if command_args:
+        arguments.extend(["bash"] + [str(argument) for argument in command_args])
+    if fakeroot_state is not None:
+        state_option = "-i" if load_state else "-s"
+        arguments = ["fakeroot", state_option, str(fakeroot_state), "--"] + arguments
+    subprocess.run(arguments, cwd=cwd, check=True)
+
+
+def unpack_cpio(cpio_path, root_dir="root", reuse_existing=True, fakeroot_state=None):
     cpio_path = Path(cpio_path).resolve()
     if not cpio_path.is_file():
         raise KphelperError("initramfs not found: %s" % cpio_path)
@@ -66,7 +98,7 @@ def unpack_cpio(cpio_path, root_dir="root", reuse_existing=True):
 
     cmd = cpio_command(cpio_path)
     try:
-        subprocess.run(["bash", "-o", "pipefail", "-c", cmd], cwd=root_dir, check=True)
+        run_cpio_command(cmd, root_dir, fakeroot_state=fakeroot_state)
     except FileNotFoundError as error:
         raise KphelperError("bash not found; initramfs operations require Linux/WSL") from error
     except subprocess.CalledProcessError as error:

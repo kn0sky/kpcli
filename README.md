@@ -51,7 +51,6 @@ If you are new to the project, start with:
 - `kphelper/cli.py`
 - `kphelper/commands/kp_run.py`
 - `kphelper/core/session.py`
-- `kphelper/core/workflow.py`
 - `kphelper/core/checksec.py`
 - `kphelper/core/symbols.py`
 - `kphelper/core/ksym.py`
@@ -223,13 +222,13 @@ Current limitation: `pack` only rewrites direct `-initrd path` arguments. It doe
 
 ### `kphelper checksec [cpio]`
 
-Inspect common kernel challenge security settings from `run.sh`. Optionally unpack an initramfs cpio into `./root` and scan its `init`.
+Inspect common kernel challenge security settings from `run.sh`. Optionally unpack an initramfs cpio into the internal `.kphelper/checksec-root` cache and scan its startup scripts.
 If the cpio path is omitted, `kphelper` first tries the `-initrd` path in `run.sh`, then recursively searches the current tree for common rootfs/initramfs files.
 
 ```bash
 kphelper checksec
 kphelper checksec rootfs.cpio
-kphelper checksec rootfs.cpio.gz --root root
+kphelper checksec rootfs.cpio.gz
 kphelper checksec -r ./run.sh rootfs.cpio --no-color
 kphelper checksec --live
 kphelper checksec --all --boot-timeout 30
@@ -266,7 +265,7 @@ kphelper rootfs make-analysis --sudo
 kphelper rootfs make-analysis rootfs.cpio.gz --sudo
 ```
 
-`--sudo` runs only the extraction, target script installation, repacking, and required cleanup with elevated privileges so cpio ownership, permissions, and device nodes are preserved. The generated archive is returned to the invoking user. Running without `--sudo` remains available for initramfs images that contain no privileged metadata.
+The default flow uses `fakeroot` to preserve cpio ownership and device metadata without requesting a password. `--sudo` is an alternative for environments without `fakeroot`; it elevates only extraction, target script installation, repacking, and required cleanup. The generated archive is returned to the invoking user.
 
 This creates `.kphelper/analysis-rootfs.cpio.gz` and `.kphelper/run-analysis.sh`. The original initramfs and `run.sh` are never modified. The generator makes only the supported final shell identity change and does not place backup scripts in startup directories.
 
@@ -282,13 +281,13 @@ The analysis image deliberately differs from the original privilege configuratio
 
 ## Command Extension
 
-Commands are loaded dynamically from:
+Command entry points live under:
 
 ```text
 kphelper/commands/
 ```
 
-Command files must use the prefix:
+Each production command is explicitly listed in `kphelper/commands/__init__.py`. Command files use the prefix:
 
 ```text
 kp_<command>.py
@@ -308,7 +307,7 @@ def handle(args):
     return 0
 ```
 
-For example, `kphelper/commands/kp_snapshot.py` automatically becomes:
+After adding `kphelper/commands/kp_snapshot.py`, register `kp_snapshot` in `COMMAND_MODULES` to expose:
 
 ```bash
 kphelper snapshot
@@ -319,15 +318,3 @@ Shared reusable logic lives under:
 ```text
 kphelper/core/
 ```
-
-## Developer templates
-
-### Command template
-
-A copyable command template is available at:
-
-```text
-kphelper/commands/kp_example.py
-```
-
-It shows how to structure a new command module and explains which parts belong in `commands/` and which parts should be moved into `core/`.

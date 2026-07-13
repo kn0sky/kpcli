@@ -10,7 +10,7 @@ from kphelper.core.pwn import log
 
 def register(subparsers):
     parser = subparsers.add_parser("rootfs", help="create and manage analysis rootfs images")
-    actions = parser.add_subparsers(dest="rootfs_action")
+    actions = parser.add_subparsers(dest="rootfs_action", required=True)
     make = actions.add_parser(
         "make-analysis",
         help="create a root analysis image without modifying original files",
@@ -23,7 +23,7 @@ def register(subparsers):
     make.add_argument(
         "--sudo",
         action="store_true",
-        help="preserve root ownership, permissions, and device nodes using sudo",
+        help="use sudo instead of the default fakeroot metadata preservation",
     )
     make.set_defaults(handler=handle_make_analysis)
     return parser

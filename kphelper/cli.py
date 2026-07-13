@@ -1,6 +1,5 @@
 import argparse
 import importlib
-import pkgutil
 import sys
 
 from . import commands
@@ -29,11 +28,6 @@ current directory requirements:
 target shell prompt:
   supported prompts: "$ " and "# "
 
-command extension:
-  add command modules under kphelper/commands/
-  file name format: kp_<command>.py
-  each module exports: register(subparsers)
-
 examples:
   kphelper init
   kphelper checksec
@@ -50,14 +44,10 @@ examples:
 
 
 def load_command_modules():
-    modules = []
-    prefix = commands.COMMAND_PREFIX
-    for module_info in pkgutil.iter_modules(commands.__path__):
-        if not module_info.name.startswith(prefix):
-            continue
-        module_name = f"{commands.__name__}.{module_info.name}"
-        modules.append(importlib.import_module(module_name))
-    return modules
+    return [
+        importlib.import_module(f"{commands.__name__}.{name}")
+        for name in commands.COMMAND_MODULES
+    ]
 
 
 def build_parser():

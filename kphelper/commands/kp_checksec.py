@@ -1,11 +1,17 @@
 from kphelper.core.analysis import analysis_address_scope, resolve_analysis_run
-from kphelper.core.checksec import collect_checksec, run_checksec
+from kphelper.core.checksec import DEFAULT_CHECKSEC_ROOT, collect_checksec, run_checksec
 from kphelper.core.checksec_report import render_report
 from kphelper.core.errors import KphelperError
 from kphelper.core.findings import Finding
 from kphelper.core.guest import add_guest_timeout_arguments, timeouts_from_args
 from kphelper.core.probe import probe_guest_runtime
 from kphelper.core.probe_report import render_live_report
+from kphelper.core.runtime_cache import (
+    DEFAULT_RUNTIME_HEADER,
+    DEFAULT_RUNTIME_REPORT,
+    save_runtime_report,
+)
+from kphelper.core.symbols import DEFAULT_SYMBOLS, KASLR_ANCHORS
 
 
 def register(subparsers):
@@ -26,8 +32,8 @@ def register(subparsers):
     )
     parser.add_argument(
         "--root",
-        default="root",
-        help="directory used for unpacked cpio, default: root",
+        default=DEFAULT_CHECKSEC_ROOT,
+        help="initramfs cache directory, default: %(default)s",
     )
     parser.add_argument(
         "--no-color",
@@ -60,7 +66,18 @@ def _run_live(args, static_rootfs=None):
         args.run,
         static_rootfs=static_rootfs,
         timeouts=timeouts_from_args(args),
+        names=tuple(dict.fromkeys(DEFAULT_SYMBOLS + KASLR_ANCHORS)),
     )
+
+
+def _render_and_cache_live(args, live_result, color):
+    cached = save_runtime_report(live_result, args.run, analysis=args.analysis)
+    enriched = dict(live_result)
+    enriched["kaslr"] = cached["kaslr"]
+    report = render_live_report(enriched, color=color)
+    report += "\n[*] Runtime report: %s" % DEFAULT_RUNTIME_REPORT
+    report += "\n[*] C assignments: %s" % DEFAULT_RUNTIME_HEADER
+    return report
 
 
 def handle(args):
@@ -71,7 +88,7 @@ def handle(args):
         args.run = str(resolve_analysis_run())
     if args.live:
         live_result = _run_live(args)
-        report = render_live_report(live_result, color=color)
+        report = _render_and_cache_live(args, live_result, color)
         if args.analysis:
             report += "\n[*] Analysis address scope: %s" % analysis_address_scope(args.run)
         print(report)
@@ -82,7 +99,7 @@ def handle(args):
         static_report = render_report(run_result, init_result, color=color)
         try:
             live_result = _run_live(args, static_rootfs=init_result)
-            live_report = render_live_report(live_result, color=color)
+            live_report = _render_and_cache_live(args, live_result, color)
         except KphelperError as error:
             live_report = render_live_report(
                 {

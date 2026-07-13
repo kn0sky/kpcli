@@ -7,7 +7,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from .cpio import unpack_cpio
+from .cpio import CPIO_MARKER, preserved_metadata_state, unpack_cpio
 from .errors import KphelperError
 from .qemu import load_qemu_run
 from .runfile import update_run_initrd
@@ -125,6 +125,17 @@ def _privileged_repack(root_dir, output):
     return output
 
 
+def _release_privileged_root(root_dir):
+    if hasattr(os, "getuid") and hasattr(os, "getgid"):
+        _sudo_run([
+            "chown",
+            "-R",
+            "%d:%d" % (os.getuid(), os.getgid()),
+            "--",
+            str(Path(root_dir).resolve()),
+        ])
+
+
 def create_analysis_environment(
     cpio_path=None,
     run_path="run.sh",
@@ -139,23 +150,34 @@ def create_analysis_environment(
     if privileged:
         root_dir = _privileged_unpack(source, root_dir)
         changes = prepare_analysis_root(root_dir, install_file=_privileged_installer)
+        output = _privileged_repack(root_dir, output)
+        _release_privileged_root(root_dir)
+        metadata_preservation = "sudo"
     else:
-        root_dir = ensure_clean_pack_root(root_dir)
-        unpack_cpio(source, root_dir, reuse_existing=False)
-        changes = prepare_analysis_root(root_dir)
+        with preserved_metadata_state() as fakeroot_state:
+            root_dir = ensure_clean_pack_root(root_dir)
+            unpack_cpio(
+                source,
+                root_dir,
+                reuse_existing=False,
+                fakeroot_state=fakeroot_state,
+            )
+            (Path(root_dir) / CPIO_MARKER).unlink(missing_ok=True)
+            changes = prepare_analysis_root(root_dir)
+            output = repack_cpio(root_dir, output, fakeroot_state=fakeroot_state)
+        metadata_preservation = "fakeroot" if fakeroot_state is not None else "root"
 
     manifest = {
         "source_cpio": str(Path(source).resolve()),
         "source_run": str(Path(run_path).resolve()),
         "privileged": privileged,
+        "metadata_preservation": metadata_preservation,
         "modifications": changes,
         "warning": "analysis environment only; runtime addresses may be boot-specific when KASLR is enabled",
     }
     manifest_path = Path(output).parent / "analysis-manifest.json"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    output = _privileged_repack(root_dir, output) if privileged else repack_cpio(root_dir, output)
-
     source_run = Path(run_path)
     analysis_run = Path(analysis_run)
     analysis_run.parent.mkdir(parents=True, exist_ok=True)

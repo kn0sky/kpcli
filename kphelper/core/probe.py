@@ -3,7 +3,7 @@ import re
 from .findings import Finding
 from .formatting import UNKNOWN
 from .guest import GuestShell, GuestTimeouts
-from .ksym import parse_kallsyms, parse_kptr_value
+from .ksym import kallsyms_query_command, parse_kallsyms, parse_kptr_value
 from .session import managed_session, local_target, remote_target
 from .symbols import DEFAULT_SYMBOLS
 
@@ -29,9 +29,7 @@ def _probe_sysctl(shell, name, static_rootfs=None):
     if static_value is not None:
         return _result(SKIPPED, "known from rootfs startup scripts", static_value)
 
-    output, status = shell.run(
-        "cat /proc/sys/kernel/%s 2>/dev/null" % name
-    )
+    output, status = shell.run("cat /proc/sys/kernel/%s" % name)
     value = parse_kptr_value(output)
     if status != 0 or value is None:
         return _result(SKIPPED, "not accessible from guest shell")
@@ -42,7 +40,7 @@ def _probe_kallsyms(shell, names, kptr_result):
     if kptr_result.get("value") in {1, 2}:
         return _result(HIDDEN, "kptr_restrict=%s" % kptr_result["value"]), {}
 
-    output, status = shell.run("cat /proc/kallsyms 2>/dev/null")
+    output, status = shell.run(kallsyms_query_command(names))
     if status != 0:
         return _result(SKIPPED, "not accessible from guest shell"), {}
 
@@ -56,7 +54,7 @@ def _probe_kallsyms(shell, names, kptr_result):
 def _probe_module_base(shell):
     output, status = shell.run(
         "for f in /sys/module/*/sections/.text; do "
-        "test -r \"$f\" || continue; v=$(cat \"$f\" 2>/dev/null); "
+        "test -r \"$f\" || continue; v=$(cat \"$f\"); "
         "test -n \"$v\" && printf '%s %s\\n' \"$f\" \"$v\" && break; done"
     )
     if status != 0 or not output.strip():
@@ -68,7 +66,7 @@ def probe_runtime(io, static_rootfs=None, timeouts=None, names=DEFAULT_SYMBOLS):
     shell = GuestShell(io, timeouts=timeouts or GuestTimeouts())
     shell.wait_ready()
 
-    uid_output, uid_status = shell.run("id -u 2>/dev/null")
+    uid_output, uid_status = shell.run("id -u")
     uid = uid_output.strip().splitlines()[-1] if uid_status == 0 and uid_output.strip() else UNKNOWN
 
     kptr_result = _probe_sysctl(shell, "kptr_restrict", static_rootfs)

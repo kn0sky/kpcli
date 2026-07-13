@@ -1,5 +1,6 @@
 from .findings import Finding
 from .formatting import BOLD, BLUE, DIM, GREEN, MAGENTA, RED, UNKNOWN, YELLOW, colorize
+from .symbols import DEFAULT_SYMBOLS, render_symbol_assignments, render_symbol_offsets
 
 
 STATUS_COLORS = {
@@ -32,7 +33,24 @@ def render_live_report(live_result, color=True):
     if symbols:
         lines.append("")
         lines.append(colorize("[*] Live symbols", MAGENTA + BOLD, color))
-        for name, value in symbols.items():
-            lines.append(live_status_line(name, {"status": "Readable", "value": f"0x{value:x}"}, color=color))
+        for name in DEFAULT_SYMBOLS:
+            if name in symbols:
+                lines.append(live_status_line(
+                    name,
+                    {"status": "Readable", "value": f"0x{symbols[name]:x}"},
+                    color=color,
+                ))
+
+    lines.append("")
+    lines.append(colorize("[*] C assignments", MAGENTA + BOLD, color))
+    lines.append(render_symbol_assignments(symbols, DEFAULT_SYMBOLS))
+
+    kaslr = live_result.get("kaslr") or {}
+    offsets = kaslr.get("offsets") or {}
+    if offsets:
+        lines.append("")
+        lines.append(colorize("[*] Stable KASLR offsets", MAGENTA + BOLD, color))
+        lines.append("// relative to %s" % kaslr["offset_anchor"])
+        lines.append(render_symbol_offsets(offsets, DEFAULT_SYMBOLS, kaslr["offset_anchor"]))
 
     return "\n".join(lines)

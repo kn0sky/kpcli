@@ -10,6 +10,9 @@ from .formatting import DISABLED, ENABLED, UNKNOWN
 from .qemu import parse_qemu_run_text
 
 
+DEFAULT_CHECKSEC_ROOT = ".kphelper/checksec-root"
+
+
 def read_text(path):
     return Path(path).read_text(errors="replace")
 
@@ -25,11 +28,9 @@ def extract_initrd(run_text):
 def resolve_initrd_path(initrd, run_path):
     if not initrd or initrd == UNKNOWN:
         return None
-    path = Path(initrd)
-    if path.exists():
-        return path
-    candidate = Path(run_path).parent / path
-    return candidate if candidate.exists() else None
+    path = Path(initrd).expanduser()
+    candidate = path if path.is_absolute() else Path(run_path).parent / path
+    return candidate if candidate.is_file() else None
 
 
 def has_any(text, needles):
@@ -121,10 +122,14 @@ def scan_init(root_dir):
     return result
 
 
-def collect_checksec(run_path="run.sh", cpio_path=None, root_dir="root"):
+def collect_checksec(run_path="run.sh", cpio_path=None, root_dir=DEFAULT_CHECKSEC_ROOT):
     run_result = detect_runsec(run_path)
     init_result = None
-    cpio_path = cpio_path or resolve_initrd_path(run_result["Initrd"], run_path) or find_cpio()
+    cpio_path = (
+        cpio_path
+        or resolve_initrd_path(run_result["Initrd"], run_path)
+        or find_cpio(Path(run_path).parent)
+    )
     if cpio_path:
         run_result["Initrd"] = str(cpio_path)
         if not shutil.which("cpio"):
@@ -133,5 +138,5 @@ def collect_checksec(run_path="run.sh", cpio_path=None, root_dir="root"):
     return run_result, init_result
 
 
-def run_checksec(run_path="run.sh", cpio_path=None, root_dir="root", color=True):
+def run_checksec(run_path="run.sh", cpio_path=None, root_dir=DEFAULT_CHECKSEC_ROOT, color=True):
     return render_report(*collect_checksec(run_path, cpio_path, root_dir), color=color)

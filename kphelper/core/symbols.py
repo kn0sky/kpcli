@@ -75,12 +75,44 @@ def extract_symbols(symbol_file=None, names=DEFAULT_SYMBOLS):
 
 def calculate_kaslr_slide(runtime_symbols, static_symbols):
     for name in KASLR_ANCHORS:
-        if name in runtime_symbols and name in static_symbols:
+        if runtime_symbols.get(name) and static_symbols.get(name):
             return name, runtime_symbols[name] - static_symbols[name]
     return None, None
 
 
-def render_symbols(symbol_file, symbols, names=DEFAULT_SYMBOLS, as_json=False, kaslr=None):
+def _hex(value):
+    return "-0x%x" % -value if value < 0 else "0x%x" % value
+
+
+def _c_identifier(name):
+    return "".join(character if character.isalnum() or character == "_" else "_" for character in name)
+
+
+def render_symbol_assignments(symbols, names=DEFAULT_SYMBOLS):
+    return "\n".join(
+        "unsigned long %-44s = %s;" % (_c_identifier(name), _hex(symbols.get(name, 0)))
+        for name in names
+    )
+
+
+def render_symbol_offsets(offsets, names=DEFAULT_SYMBOLS, anchor="_stext"):
+    return "\n".join(
+        "unsigned long %-44s = %s;" % (
+            _c_identifier(name) + "_offset",
+            _hex(offsets.get(name, 0)),
+        )
+        for name in names
+    )
+
+
+def render_symbols(
+    symbol_file,
+    symbols,
+    names=DEFAULT_SYMBOLS,
+    as_json=False,
+    kaslr=None,
+    output_format="macro",
+):
     kaslr = kaslr or {}
     payload = {
         "file": str(symbol_file),
@@ -98,11 +130,17 @@ def render_symbols(symbol_file, symbols, names=DEFAULT_SYMBOLS, as_json=False, k
             lines.append("[*] KASLR slide: 0x%x (anchor: %s)" % (kaslr["slide"], kaslr["anchor"]))
         elif kaslr.get("detail"):
             lines.append("[*] KASLR note: %s" % kaslr["detail"])
-    for name in names:
-        if name in symbols:
-            lines.append("#define %-48s 0x%x" % (name.upper(), symbols[name]))
-        else:
-            lines.append("// missing: %s" % name)
+    if output_format == "assignment":
+        lines.append(render_symbol_assignments(symbols, names))
+    else:
+        for name in names:
+            lines.append("#define %-48s %s" % (name.upper(), _hex(symbols.get(name, 0))))
+
+    offsets = kaslr.get("offsets") or {}
+    if offsets:
+        lines.append("")
+        lines.append("[*] Stable offsets relative to %s" % kaslr["offset_anchor"])
+        lines.append(render_symbol_offsets(offsets, names, kaslr["offset_anchor"]))
     return "\n".join(lines)
 
 

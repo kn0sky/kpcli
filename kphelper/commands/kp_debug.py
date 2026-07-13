@@ -42,8 +42,8 @@ def handle(args):
     debugger = None
     try:
         with managed_session(local_target, "./" + str(debug_run)) as io:
-            upload_and_cd(io)
             debugger = kgdb(symbol)
+            upload_and_cd(io)
             interact(io)
     finally:
         close_debugger(debugger)

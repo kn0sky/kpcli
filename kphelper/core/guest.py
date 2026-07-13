@@ -49,12 +49,19 @@ class GuestShell:
             )
         return data
 
+    @staticmethod
+    def _marker_printf(marker, format_string="%s%s\\n", extra_arguments=""):
+        midpoint = len(marker) // 2
+        first, second = marker[:midpoint], marker[midpoint:]
+        command = "printf '%s' '%s' '%s'" % (format_string, first, second)
+        return command + extra_arguments
+
     def wait_ready(self):
         if self.ready:
             return
         self._receive_prompt(self.timeouts.boot)
         marker = "__KPHELPER_READY_%s__" % uuid.uuid4().hex
-        self.io.sendline(("echo " + marker).encode())
+        self.io.sendline(self._marker_printf(marker).encode())
         data = self.io.recvuntil(marker.encode(), timeout=self.timeouts.command) or b""
         if marker.encode() not in data:
             raise KphelperError("guest shell did not execute readiness probe")
@@ -63,11 +70,29 @@ class GuestShell:
 
     def run(self, command):
         self.wait_ready()
-        marker = "__KPHELPER_%s__" % uuid.uuid4().hex
-        marker_prefix = (marker + ":").encode()
-        self.io.sendline(("%s; printf '%s%%s\\n' $?" % (command, marker + ":")).encode())
-        data = self.io.recvuntil(marker_prefix, timeout=self.timeouts.command) or b""
-        if marker_prefix not in data:
+        token = uuid.uuid4().hex
+        start_marker = "__KPHELPER_START_%s__" % token
+        end_marker = "__KPHELPER_END_%s__" % token
+        end_prefix = (end_marker + ":").encode()
+        payload = "%s; { %s; }; __kphelper_status=$?; %s" % (
+            self._marker_printf(start_marker),
+            command,
+            self._marker_printf(
+                end_marker,
+                format_string="%s%s:%s\\n",
+                extra_arguments=' "$__kphelper_status"',
+            ),
+        )
+        self.io.sendline(payload.encode())
+
+        start_data = self.io.recvuntil(start_marker.encode(), timeout=self.timeouts.command) or b""
+        if start_marker.encode() not in start_data:
+            raise KphelperError(
+                "guest command timed out after %d seconds: %s"
+                % (self.timeouts.command, command)
+            )
+        data = self.io.recvuntil(end_prefix, timeout=self.timeouts.command) or b""
+        if end_prefix not in data:
             raise KphelperError(
                 "guest command timed out after %d seconds: %s"
                 % (self.timeouts.command, command)
@@ -80,9 +105,5 @@ class GuestShell:
             status = int(status_text.splitlines()[0])
         except (IndexError, ValueError):
             status = None
-        output = data.rsplit(marker_prefix, 1)[0]
-        text = output.decode(errors="replace")
-        lines = text.splitlines()
-        while lines and (lines[0].strip() in command or lines[0].strip().startswith("HELPER_")):
-            lines = lines[1:]
-        return "\n".join(lines).strip(), status
+        output = data.rsplit(end_prefix, 1)[0]
+        return output.decode(errors="replace").strip(), status

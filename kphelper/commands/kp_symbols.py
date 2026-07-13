@@ -3,11 +3,15 @@ from kphelper.core.checksec import detect_runsec
 from kphelper.core.errors import KphelperError
 from kphelper.core.guest import add_guest_timeout_arguments, timeouts_from_args
 from kphelper.core.ksym import extract_guest_ksyms
+from kphelper.core.runtime_cache import (
+    DEFAULT_RUNTIME_REPORT,
+    load_runtime_report,
+    save_runtime_report,
+)
 from kphelper.core.session import managed_session, local_target, remote_target
 from kphelper.core.symbols import (
     DEFAULT_SYMBOLS,
     KASLR_ANCHORS,
-    calculate_kaslr_slide,
     extract_symbols,
     render_symbols,
 )
@@ -16,11 +20,16 @@ from kphelper.core.symbols import (
 def register(subparsers):
     parser = subparsers.add_parser(
         "symbols",
-        help="extract kernel symbols; runtime /proc/kallsyms mode is the default",
+        help="render the latest runtime symbols; use --refresh to query a guest",
     )
     parser.add_argument("--file", help="use static vmlinux extraction instead of runtime mode")
     parser.add_argument("-s", "--symbol", action="append", dest="symbols", help="symbol to extract; repeatable")
     parser.add_argument("--run", default="run.sh", help="QEMU startup script, default: run.sh")
+    parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="start QEMU and replace the cached runtime report",
+    )
     parser.add_argument(
         "--analysis",
         action="store_true",
@@ -28,6 +37,12 @@ def register(subparsers):
     )
     parser.add_argument("--remote", nargs=2, metavar=("IP", "PORT"), help="probe an existing remote shell")
     add_guest_timeout_arguments(parser)
+    parser.add_argument(
+        "--format",
+        choices=("macro", "assignment"),
+        default="macro",
+        help="C output format, default: %(default)s",
+    )
     parser.add_argument("--json", action="store_true", help="print JSON output")
     parser.set_defaults(handler=handle)
     return parser
@@ -52,23 +67,39 @@ def _runtime_symbols(args, names):
             timeouts=timeouts_from_args(args),
         )
 
-    kaslr = {"status": "Unknown", "detail": "runtime symbols collected; no vmlinux available to calculate slide"}
-    try:
-        symbol_file, static = extract_symbols(None, requested)
-    except KphelperError:
-        symbol_file, static = None, {}
-    anchor, slide = calculate_kaslr_slide(runtime, static)
-    if slide is not None:
+    if args.remote:
         kaslr = {
-            "status": "Enabled" if slide else "Disabled",
-            "anchor": anchor,
-            "slide": slide,
-            "detail": "calculated from runtime and vmlinux anchor addresses",
+            "status": "Unknown",
+            "detail": "remote runtime addresses are valid for the current remote boot",
+            "absolute_addresses_reusable": False,
         }
-    elif not args.remote:
-        state = detect_runsec(args.run)["KASLR"]
-        kaslr = {"status": state, "detail": "from run.sh; slide requires a matching vmlinux anchor"}
-    return render_symbols(source, runtime, names, as_json=args.json, kaslr=kaslr)
+    else:
+        cached = save_runtime_report(
+            {"symbols": runtime},
+            args.run,
+            analysis=args.analysis,
+        )
+        kaslr = cached["kaslr"]
+    return render_symbols(
+        source,
+        runtime,
+        names,
+        as_json=args.json,
+        kaslr=kaslr,
+        output_format=args.format,
+    )
+
+
+def _cached_symbols(args, names):
+    cached = load_runtime_report()
+    return render_symbols(
+        "cache:%s" % DEFAULT_RUNTIME_REPORT,
+        cached.get("symbols") or {},
+        names,
+        as_json=args.json,
+        kaslr=cached.get("kaslr") or {},
+        output_format=args.format,
+    )
 
 
 def handle(args):
@@ -76,12 +107,27 @@ def handle(args):
     if args.analysis:
         if args.remote or args.file:
             raise KphelperError("--analysis cannot be combined with --remote or --file")
+        if not args.refresh:
+            raise KphelperError("--analysis selects the refresh source; add --refresh")
         args.run = str(resolve_analysis_run())
     if args.file:
+        if args.refresh:
+            raise KphelperError("--refresh cannot be combined with --file")
         symbol_file, symbols = extract_symbols(args.file, names)
         kaslr = {"status": "Static only", "detail": "addresses are link-time values; runtime slide is not available"}
-        print(render_symbols(symbol_file, symbols, names, as_json=args.json, kaslr=kaslr))
+        print(render_symbols(
+            symbol_file,
+            symbols,
+            names,
+            as_json=args.json,
+            kaslr=kaslr,
+            output_format=args.format,
+        ))
         return 0
+    if not args.refresh and not args.remote:
+        print(_cached_symbols(args, names))
+        return 0
+
     output = _runtime_symbols(args, names)
     if args.analysis and not args.json:
         output += "\n[*] Analysis address scope: %s" % analysis_address_scope(args.run)
