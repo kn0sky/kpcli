@@ -26,6 +26,15 @@ DEFAULT_SYMBOLS = (
 
 KASLR_ANCHORS = ("_stext", "_text", "startup_64")
 
+FUNCTION_SYMBOLS = frozenset((
+    "commit_creds",
+    "prepare_kernel_cred",
+    "find_task_by_vpid",
+    "switch_task_namespaces",
+    "kernel_read_file",
+    "call_usermodehelper_exec",
+))
+
 
 def resolve_symbol_file(symbol_file=None):
     path = Path(symbol_file) if symbol_file else find_vmlinux()
@@ -88,10 +97,18 @@ def _c_identifier(name):
     return "".join(character if character.isalnum() or character == "_" else "_" for character in name)
 
 
-def render_symbol_assignments(symbols, names=DEFAULT_SYMBOLS):
+def render_symbol_assignments(symbols, names=DEFAULT_SYMBOLS, function_pointers=False):
+    def declaration(name):
+        identifier = _c_identifier(name)
+        if function_pointers and name in FUNCTION_SYMBOLS:
+            return "%-58s = (unsigned long (*)())%s;" % (
+                "unsigned long (*%s)()" % identifier,
+                _hex(symbols.get(name, 0)),
+            )
+        return "unsigned long %-44s = %s;" % (identifier, _hex(symbols.get(name, 0)))
+
     return "\n".join(
-        "unsigned long %-44s = %s;" % (_c_identifier(name), _hex(symbols.get(name, 0)))
-        for name in names
+        declaration(name) for name in names
     )
 
 
@@ -130,8 +147,12 @@ def render_symbols(
             lines.append("[*] KASLR slide: 0x%x (anchor: %s)" % (kaslr["slide"], kaslr["anchor"]))
         elif kaslr.get("detail"):
             lines.append("[*] KASLR note: %s" % kaslr["detail"])
-    if output_format == "assignment":
-        lines.append(render_symbol_assignments(symbols, names))
+    if output_format in ("assignment", "pointer"):
+        lines.append(render_symbol_assignments(
+            symbols,
+            names,
+            function_pointers=output_format == "pointer",
+        ))
     else:
         for name in names:
             lines.append("#define %-48s %s" % (name.upper(), _hex(symbols.get(name, 0))))

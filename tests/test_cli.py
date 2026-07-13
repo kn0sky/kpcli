@@ -64,6 +64,13 @@ class CliTests(unittest.TestCase):
         checksec_help = parser._subparsers._group_actions[0].choices["checksec"].format_help()
         self.assertNotIn("--analysis", checksec_help)
 
+    def test_symbol_pointer_output_flags_are_exposed(self):
+        parser = build_parser()
+
+        self.assertTrue(parser.parse_args(["checksec", "-p"]).function_pointers)
+        self.assertEqual(parser.parse_args(["symbols", "-p"]).format, "pointer")
+        self.assertEqual(parser.parse_args(["symbols"]).format, "macro")
+
     def test_static_checksec_runs_without_site_packages(self):
         with tempfile.TemporaryDirectory() as tmp:
             Path(tmp, "run.sh").write_text(

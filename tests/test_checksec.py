@@ -177,6 +177,23 @@ class ChecksecParsingTests(unittest.TestCase):
         self.assertEqual(len(symbol_lines), 2)
         self.assertEqual(symbol_lines[0].index(":"), symbol_lines[1].index(":"))
 
+    def test_render_live_symbols_supports_function_pointers(self):
+        output = render_live_report(
+            {
+                "symbols": {
+                    "commit_creds": 0xffffffff81072540,
+                    "init_cred": 0xffffffff82a6b780,
+                },
+            },
+            color=False,
+            function_pointers=True,
+        )
+
+        self.assertIn("unsigned long (*commit_creds", output)
+        self.assertIn("(unsigned long (*)())0xffffffff81072540", output)
+        self.assertIn("unsigned long init_cred", output)
+        self.assertNotIn("(*init_cred", output)
+
     @patch("kphelper.core.guest.uuid.uuid4")
     def test_guest_command_markers_do_not_match_serial_echo(self, uuid4):
         uuid4.return_value.hex = "a" * 32
@@ -440,6 +457,26 @@ class SymbolTests(unittest.TestCase):
         self.assertIn("unsigned long commit_creds", output)
         self.assertIn("unsigned long prepare_kernel_cred", output)
         self.assertIn("= 0x0;", output)
+
+    def test_render_symbols_supports_function_pointers_and_numeric_offsets(self):
+        output = render_symbols(
+            "runtime cache",
+            {
+                "commit_creds": 0xffffffff81080000,
+                "modprobe_path": 0xffffffff82a5c5c0,
+            },
+            names=("commit_creds", "modprobe_path"),
+            kaslr={
+                "offset_anchor": "_stext",
+                "offsets": {"commit_creds": 0x80000, "modprobe_path": 0x125c5c0},
+            },
+            output_format="pointer",
+        )
+
+        self.assertIn("unsigned long (*commit_creds", output)
+        self.assertIn("unsigned long modprobe_path", output)
+        self.assertIn("unsigned long commit_creds_offset", output)
+        self.assertNotIn("(*commit_creds_offset", output)
 
     def test_parse_guest_kptr_value(self):
         output = "cat /proc/sys/kernel/kptr_restrict\n0\n"

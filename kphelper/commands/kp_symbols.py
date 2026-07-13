@@ -40,9 +40,17 @@ def register(subparsers):
     add_guest_timeout_arguments(parser)
     parser.add_argument(
         "--format",
-        choices=("macro", "assignment"),
+        choices=("macro", "assignment", "pointer"),
         default="macro",
         help="C output format, default: %(default)s",
+    )
+    parser.add_argument(
+        "-p",
+        "--function-pointers",
+        action="store_const",
+        const="pointer",
+        dest="format",
+        help="render callable symbols as C function pointers",
     )
     parser.add_argument("--json", action="store_true", help="print JSON output")
     parser.set_defaults(handler=handle)

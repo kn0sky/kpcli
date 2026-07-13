@@ -41,6 +41,12 @@ def register(subparsers):
         action="store_true",
         help="disable ANSI color output",
     )
+    parser.add_argument(
+        "-p",
+        "--function-pointers",
+        action="store_true",
+        help="render callable live symbols as C function pointers",
+    )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
         "--live",
@@ -68,7 +74,12 @@ def _run_live(args, static_rootfs=None):
 
 def _render_and_cache_live(args, live_result, color):
     cached = save_runtime_report(live_result, args.run, analysis=args.analysis)
-    report = render_live_report(live_result, color=color, kaslr=cached["kaslr"])
+    report = render_live_report(
+        live_result,
+        color=color,
+        kaslr=cached["kaslr"],
+        function_pointers=getattr(args, "function_pointers", False),
+    )
     report += "\n[*] Runtime report: %s" % DEFAULT_RUNTIME_REPORT
     report += "\n[*] C assignments: %s" % DEFAULT_RUNTIME_HEADER
     return report
@@ -116,7 +127,11 @@ def handle(args):
                 },
                 symbols={},
             )
-            live_report = render_live_report(fallback, color=color)
+            live_report = render_live_report(
+                fallback,
+                color=color,
+                function_pointers=getattr(args, "function_pointers", False),
+            )
         combined = static_report + "\n\n" + live_report
         combined += "\n[*] Analysis address scope: %s" % analysis_address_scope(args.run)
         print(combined)

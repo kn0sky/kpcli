@@ -24,7 +24,7 @@ def live_status_line(name, result, color=True, label_width=18):
     return f"    {label}: {colored_value}"
 
 
-def render_live_report(live_result, color=True, kaslr=None):
+def render_live_report(live_result, color=True, kaslr=None, function_pointers=False):
     if kaslr is None and not isinstance(live_result, RuntimeProbeReport):
         kaslr = live_result.get("kaslr") or {}
     report = RuntimeProbeReport.from_mapping(live_result)
@@ -48,7 +48,11 @@ def render_live_report(live_result, color=True, kaslr=None):
 
     lines.append("")
     lines.append(colorize("[*] C assignments", MAGENTA + BOLD, color))
-    lines.append(render_symbol_assignments(symbols, DEFAULT_SYMBOLS))
+    lines.append(render_symbol_assignments(
+        symbols,
+        DEFAULT_SYMBOLS,
+        function_pointers=function_pointers,
+    ))
 
     kaslr = kaslr or {}
     offsets = kaslr.get("offsets") or {}

@@ -159,6 +159,7 @@ kphelper symbols --run ./run.sh
 kphelper symbols --remote 127.0.0.1 1337
 kphelper symbols --file ./vmlinux
 kphelper symbols -s commit_creds -s prepare_kernel_cred
+kphelper symbols -p
 kphelper symbols --json
 ```
 
@@ -185,7 +186,9 @@ kernel_read_file
 call_usermodehelper_exec
 ```
 
-Default output is C macro style for quick copy/paste into `exp.c`.
+Default output is C macro style for quick copy/paste into `exp.c`. Pass `-p` to
+render callable symbols as C function pointers; data symbols and stable KASLR
+offsets remain integer assignments.
 
 ### `kphelper remote <ip> <port>`
 
@@ -231,11 +234,12 @@ kphelper checksec rootfs.cpio
 kphelper checksec rootfs.cpio.gz
 kphelper checksec -r ./run.sh rootfs.cpio --no-color
 kphelper checksec --live
+kphelper checksec --live -p
 kphelper checksec --all --boot-timeout 30
 kphelper checksec --all
 ```
 
-The default mode performs static analysis only. `--live` and `--all` automatically create a separate analysis rootfs with fakeroot, change the supported challenge shell from UID/GID 1337 to UID/GID 0, and boot the generated run script. `--live` renders runtime probes only. `--all` renders the generated rootfs static report and then appends live results; if no interactive guest shell is reached, the live section is marked `Skipped` instead of discarding the static report. Use `--boot-timeout` and `--command-timeout` for slow guests.
+The default mode performs static analysis only. `--live` and `--all` automatically create a separate analysis rootfs with fakeroot, change the supported challenge shell from UID/GID 1337 to UID/GID 0, and boot the generated run script. `--live` renders runtime probes only. `--all` renders the generated rootfs static report and then appends live results; if no interactive guest shell is reached, the live section is marked `Skipped` instead of discarding the static report. Add `-p` to either live mode to render callable symbols as function pointers. Use `--boot-timeout` and `--command-timeout` for slow guests.
 
 ```bash
 kphelper checksec --live
