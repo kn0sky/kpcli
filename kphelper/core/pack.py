@@ -5,12 +5,12 @@ import subprocess
 from pathlib import Path
 
 from .build import build_exp
-from .checksec import detect_runsec, resolve_initrd_path
 from .constants import LOCAL_EXP
 from .cpio import CPIO_MARKER, preserved_metadata_state, run_cpio_command, unpack_cpio
 from .discovery import find_cpio
 from .errors import KphelperError
 from .pwn import log
+from .qemu import load_qemu_run
 from .runfile import update_run_initrd
 
 
@@ -34,10 +34,11 @@ def select_cpio(run_path="run.sh", cpio_path=None):
     if cpio_path:
         return Path(cpio_path)
 
-    runsec = detect_runsec(run_path)
-    found = resolve_initrd_path(runsec["Initrd"], run_path)
-    if found:
-        return found
+    if Path(run_path).is_file():
+        config = load_qemu_run(run_path)
+        found = config.resolve_file(config.initrd)
+        if found and found.is_file():
+            return found
 
     found = find_cpio(Path(run_path).parent)
     if found:

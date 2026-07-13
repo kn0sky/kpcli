@@ -16,6 +16,10 @@ class QemuRunConfig:
     initrd: Optional[str] = None
     cpu: str = ""
     gdb_enabled: bool = False
+    kernel: Optional[str] = None
+
+    def resolve_file(self, value):
+        return resolve_run_file(value, self.run_path)
 
 
 def _tokenize_qemu_command(text):
@@ -42,13 +46,33 @@ def _option_value(arguments, names):
     return None
 
 
+def resolve_run_file(value, run_path):
+    if not value or "$" in value:
+        return None
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return path
+    candidates = (path, Path(run_path).parent / path)
+    return next((candidate for candidate in candidates if candidate.is_file()), candidates[-1])
+
+
 def parse_qemu_run_text(text, run_path="run.sh"):
     arguments = _tokenize_qemu_command(text)
     cmdline = _option_value(arguments, {"-append"}) or ""
     initrd = _option_value(arguments, {"-initrd", "-initramfs"})
     cpu = _option_value(arguments, {"-cpu"}) or ""
     gdb_enabled = "-s" in arguments or "-gdb" in arguments
-    return QemuRunConfig(Path(run_path), text, arguments, cmdline, initrd, cpu, gdb_enabled)
+    kernel = _option_value(arguments, {"-kernel"})
+    return QemuRunConfig(
+        run_path=Path(run_path),
+        text=text,
+        arguments=arguments,
+        cmdline=cmdline,
+        initrd=initrd,
+        cpu=cpu,
+        gdb_enabled=gdb_enabled,
+        kernel=kernel,
+    )
 
 
 def load_qemu_run(run_path="run.sh"):

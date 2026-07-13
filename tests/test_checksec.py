@@ -65,11 +65,12 @@ class ChecksecParsingTests(unittest.TestCase):
 
     def test_qemu_parser_does_not_treat_following_options_as_cmdline(self):
         config = parse_qemu_run_text(
-            "qemu-system-x86_64 -append console=ttyS0 -initrd rootfs.cpio -s\n"
+            "qemu-system-x86_64 -kernel bzImage -append console=ttyS0 -initrd rootfs.cpio -s\n"
         )
 
         self.assertEqual(config.cmdline, "console=ttyS0")
         self.assertEqual(config.initrd, "rootfs.cpio")
+        self.assertEqual(config.kernel, "bzImage")
         self.assertTrue(config.gdb_enabled)
 
     def test_qemu_parser_ignores_flags_outside_qemu_command(self):
@@ -78,6 +79,20 @@ class ChecksecParsingTests(unittest.TestCase):
         )
 
         self.assertFalse(config.gdb_enabled)
+
+    def test_qemu_config_resolves_files_relative_to_run_script(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_path = Path(tmp) / "challenge/run.sh"
+            kernel = run_path.parent / "images/bzImage"
+            kernel.parent.mkdir(parents=True)
+            kernel.write_bytes(b"kernel")
+            config = parse_qemu_run_text(
+                'qemu-system-x86_64 -kernel images/bzImage -initrd "$INITRD"\n',
+                run_path,
+            )
+
+            self.assertEqual(config.resolve_file(config.kernel), kernel)
+            self.assertIsNone(config.initrd)
 
     def test_detect_runsec_common_disabled_settings(self):
         with tempfile.TemporaryDirectory() as tmp:

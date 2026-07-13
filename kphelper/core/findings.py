@@ -28,9 +28,6 @@ class Finding:
             source=result.get("source"),
         )
 
-    def get(self, key, default=None):
-        return self.to_dict().get(key, default)
-
     def to_dict(self):
         result = {"status": self.status}
         if self.value is not None:

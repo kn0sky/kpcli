@@ -7,7 +7,7 @@ from .cpio import unpack_cpio
 from .discovery import find_cpio
 from .errors import KphelperError
 from .formatting import DISABLED, ENABLED, UNKNOWN
-from .qemu import parse_qemu_run_text
+from .qemu import parse_qemu_run_text, resolve_run_file
 
 
 DEFAULT_CHECKSEC_ROOT = ".kphelper/checksec-root"
@@ -28,9 +28,8 @@ def extract_initrd(run_text):
 def resolve_initrd_path(initrd, run_path):
     if not initrd or initrd == UNKNOWN:
         return None
-    path = Path(initrd).expanduser()
-    candidate = path if path.is_absolute() else Path(run_path).parent / path
-    return candidate if candidate.is_file() else None
+    candidate = resolve_run_file(initrd, run_path)
+    return candidate if candidate and candidate.is_file() else None
 
 
 def has_any(text, needles):

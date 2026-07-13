@@ -45,30 +45,13 @@ def _file_fingerprint(path):
     }
 
 
-def _option_value(arguments, names):
-    for index, argument in enumerate(arguments[:-1]):
-        if argument in names:
-            return arguments[index + 1]
-    return None
-
-
-def _resolve_run_file(value, run_path):
-    if not value or "$" in value:
-        return None
-    path = Path(value).expanduser()
-    if path.is_absolute():
-        return path
-    candidates = (path, Path(run_path).parent / path)
-    return next((candidate for candidate in candidates if candidate.is_file()), candidates[-1])
-
-
 def build_run_fingerprint(run_path):
     run_path = Path(run_path)
     if not run_path.is_file():
         raise KphelperError("cannot fingerprint missing QEMU startup script: %s" % run_path)
     config = load_qemu_run(run_path)
-    kernel = _resolve_run_file(_option_value(config.arguments, {"-kernel"}), run_path)
-    initrd = _resolve_run_file(config.initrd, run_path)
+    kernel = config.resolve_file(config.kernel)
+    initrd = config.resolve_file(config.initrd)
     payload = {
         "run": _file_fingerprint(run_path),
         "kernel": _file_fingerprint(kernel),

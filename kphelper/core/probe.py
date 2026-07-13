@@ -37,8 +37,8 @@ def _probe_sysctl(shell, name, static_rootfs=None):
 
 
 def _probe_kallsyms(shell, names, kptr_result):
-    if kptr_result.get("value") in {1, 2}:
-        return _result(HIDDEN, "kptr_restrict=%s" % kptr_result["value"]), {}
+    if kptr_result.value in {1, 2}:
+        return _result(HIDDEN, "kptr_restrict=%s" % kptr_result.value), {}
 
     output, status = shell.run(kallsyms_query_command(names))
     if status != 0:
